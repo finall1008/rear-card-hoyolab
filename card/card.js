@@ -539,8 +539,14 @@
       ctx.fill();
       drawText('700 24px sans-serif', banner ? (errored ? '#f0b27a' : '#d9cec0') : info.accent, 'center', 'middle', recText, x + inner / 2, y + recH / 2, inner - 16);
       y += recH + 22;
-      drawText('600 18px sans-serif', '#b7ab9e', 'left', 'middle', metricLabel(daily, info.daily), x, y, inner * 0.52);
-      drawText('700 24px sans-serif', '#f7f1e8', 'right', 'middle', displayScalar(daily && daily.current) + '/' + displayScalar(daily && daily.max), x + inner, y - 1, inner * 0.45);
+      var dailyLabel = metricLabel(daily, info.daily);
+      var dailyValue = displayScalar(daily && daily.current) + '/' + displayScalar(daily && daily.max);
+      drawText('600 15px sans-serif', '#b7ab9e', 'left', 'middle', dailyLabel, x, y, inner * 0.44);
+      ctx.font = '700 22px sans-serif';
+      ctx.fillStyle = '#f7f1e8';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(dailyValue, Math.round(x + inner), Math.round(y - 1));
       y += 32;
       paintBar(x, y, inner, 12, fillRatio(daily && daily.current, daily && daily.max), info.accent);
       var reward = rewardText(daily);
@@ -615,8 +621,14 @@
         ctx.fillStyle = 'rgba(255,244,230,0.08)';
         ctx.fillRect(x, dy - 26, inner, 1);
       }
-      drawText('600 22px sans-serif', '#b7ab9e', 'left', 'middle', metricLabel(daily, info.daily), x, dy, inner * 0.5);
-      drawText('700 30px sans-serif', '#f7f1e8', 'right', 'middle', displayScalar(daily && daily.current) + '/' + displayScalar(daily && daily.max), x + inner, dy - 1, inner * 0.5);
+      var detailDailyLabel = metricLabel(daily, info.daily);
+      var detailDailyValue = displayScalar(daily && daily.current) + '/' + displayScalar(daily && daily.max);
+      drawText('600 20px sans-serif', '#b7ab9e', 'left', 'middle', detailDailyLabel, x, dy, inner * 0.5);
+      ctx.font = '700 26px sans-serif';
+      ctx.fillStyle = '#f7f1e8';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(detailDailyValue, Math.round(x + inner), Math.round(dy - 1));
       paintBar(x, dy + 34, inner, 12, fillRatio(daily && daily.current, daily && daily.max), info.accent);
       if (reward != null) drawText('700 22px sans-serif', rewardColor(reward), 'left', 'middle', reward, x, dy + 66, inner);
     }

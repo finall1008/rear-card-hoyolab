@@ -13,8 +13,8 @@ const bridgeDist = path.join(root, 'dist', 'bridge');
 export const MODULE_MANIFEST = {
   id: 'dev.finall.hoyolab',
   name: '米游社',
-  version: '0.1.0',
-  versionCode: 1,
+  version: '0.1.1',
+  versionCode: 2,
   apiVersion: 2,
   description: '米游社每日委托与体力卡片：首页三游戏并列，详情页左右两栏，支持下拉刷新与后台定时更新。',
   author: 'Latte Helper 移植',
