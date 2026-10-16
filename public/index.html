@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <title>米游社 · 卡片设置</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app">
+    <div class="main">
+      <div class="wrap">
+        <header class="hero" id="top">
+          <p class="eyebrow">卡片模块 · 设置原型</p>
+          <h1>米游社 · 卡片设置</h1>
+          <p class="lede">登录米游社，选角色，看体力与每日进度。</p>
+          <div class="hero-row">
+            <p id="hero-status" class="status-pill is-wait">正在读取状态</p>
+            <p id="hero-sync" class="fine">尚未收到状态</p>
+          </div>
+        </header>
+
+        <noscript>
+          <p class="banner">需要启用 JavaScript 才能调用本机接口。页面不加载外部脚本。</p>
+        </noscript>
+
+        <div id="action-error" class="banner" hidden role="alert">
+          <div id="action-error-body"></div>
+          <button type="button" class="btn" id="action-retry" hidden>重试这一步</button>
+        </div>
+        <p id="live-status" class="live" aria-live="polite"></p>
+
+        <section id="account" class="section" aria-labelledby="account-title">
+          <div class="section-head">
+            <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 8h3v3H8zM13 8h3M13 11h3M8 13h3M13 13h3M8 16h8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <div>
+              <h2 id="account-title">账号</h2>
+              <p>用米游社 App 扫码登录。</p>
+            </div>
+          </div>
+          <div class="split">
+            <article class="card" id="qr-card">
+              <h3>扫码登录</h3>
+              <p id="qr-lead" class="hint">生成二维码后用手机米游社扫一扫。</p>
+              <div id="qr-frame" class="qr-frame" hidden>
+                <img id="qr-image" alt="米游社登录二维码" width="232" height="232">
+              </div>
+              <p id="qr-status" class="qr-status">尚未开始</p>
+              <div id="qr-error" class="alert" hidden></div>
+              <div class="actions">
+                <button type="button" class="btn primary" id="btn-qr">生成登录二维码</button>
+                <button type="button" class="btn" id="btn-poll" hidden>查询扫码状态</button>
+                <button type="button" class="btn primary" id="btn-complete" hidden>继续认证</button>
+                <button type="button" class="btn ghost" id="btn-qr-restart" hidden>重新生成二维码</button>
+              </div>
+              <p id="qr-note" class="fine">自动查询约每 3 秒一次。</p>
+            </article>
+
+            <article class="card" id="account-card">
+              <h3>已保存的账号</h3>
+              <div id="account-body">
+                <p class="hint">正在读取本机保存的登录状态。</p>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn danger" id="btn-remove">清除本机账号</button>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <form id="settings-form" class="section" aria-labelledby="roles-title">
+          <div class="section-head" id="roles">
+            <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><circle cx="9" cy="9" r="3" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M4.5 19c.6-2.4 2.4-3.5 4.5-3.5s3.9 1.1 4.5 3.5M16 8h4M18 6v4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <div>
+              <h2 id="roles-title">角色与刷新间隔</h2>
+              <p>选角色，定刷新周期。</p>
+            </div>
+          </div>
+          <div id="role-grid" class="game-grid">
+            <p class="placeholder">正在读取角色。</p>
+          </div>
+          <article class="card interval-card">
+            <label for="interval">后台刷新间隔（分钟）</label>
+            <div class="interval-row">
+              <input id="interval" name="intervalMinutes" type="number" inputmode="numeric" min="5" step="1" value="15" autocomplete="off" spellcheck="false">
+              <button type="submit" class="btn primary" id="btn-save">保存选择与间隔</button>
+              <button type="button" class="btn" id="btn-roles">获取绑定角色</button>
+            </div>
+            <p id="settings-dirty" class="fine" hidden>有尚未保存的修改。</p>
+            <p id="interval-saved" class="fine">已保存的间隔会在读到状态后显示。</p>
+          </article>
+        </form>
+
+        <section id="notes" class="section" aria-labelledby="notes-title">
+          <div class="section-head">
+            <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><rect x="4" y="4" width="16" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M8 9h8M8 12h8M8 15h5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>
+            <div>
+              <h2 id="notes-title">卡片数据</h2>
+              <p>每个游戏单独刷新。</p>
+            </div>
+          </div>
+          <div id="note-grid" class="game-grid">
+            <p class="placeholder">正在读取数据。</p>
+          </div>
+        </section>
+
+        <section id="events" class="section" aria-labelledby="events-title">
+          <div class="section-head">
+            <svg viewBox="0 0 24 24" class="icon" aria-hidden="true"><path d="M6 6h12M6 12h12M6 18h8" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><circle cx="6" cy="6" r="1.2" fill="currentColor"/><circle cx="6" cy="12" r="1.2" fill="currentColor"/><circle cx="6" cy="18" r="1.2" fill="currentColor"/></svg>
+            <div>
+              <h2 id="events-title">阶段进度</h2>
+              <p>最新在上面。</p>
+            </div>
+          </div>
+          <ol id="event-list" class="timeline" reversed>
+            <li class="placeholder">还没有阶段事件。</li>
+          </ol>
+        </section>
+
+        <footer class="footer">
+          <p>移植自 The Latte Helper（AGPL-3.0），非米哈游官方产品。上游：<a href="https://github.com/pizza-studio/PizzaHelperUnited" target="_blank" rel="noreferrer noopener">PizzaHelperUnited</a>（基线 <span id="footer-commit" class="mono">尚未读取</span>）。</p>
+          <p>本服务源码：<a href="/source">下载源码包</a>。</p>
+        </footer>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="modal-title">
+      <h2 id="modal-title"></h2>
+      <p id="modal-body"></p>
+      <div class="actions">
+        <button type="button" class="btn" id="modal-cancel">取消</button>
+        <button type="button" class="btn danger" id="modal-ok">确认</button>
+      </div>
+    </div>
+  </div>
+  <script src="/app.js" defer></script>
+</body>
+</html>

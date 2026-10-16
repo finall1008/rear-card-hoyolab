@@ -1,0 +1,12 @@
+{
+  "name": "rear-card-hoyolab",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "米游社卡片设置原型；按 The Latte Helper 移植国服 App 扫码认证",
+  "license": "AGPL-3.0-or-later",
+  "engines": { "node": ">=22" },
+  "scripts": { "start": "node server.mjs", "preview:card": "node preview-server.mjs", "test": "node --test", "build:bridge": "node scripts/build-bridge.mjs" },
+  "dependencies": { "qrcode": "1.5.4", "@noble/hashes": "2.4.0" },
+  "devDependencies": { "esbuild": "0.28.2" }
+}
