@@ -4,3 +4,4 @@ node_modules/
 coverage/
 dist/
 *.log
+tools/card-build/node_modules/

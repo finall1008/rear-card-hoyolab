@@ -1,0 +1,38 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            tools/card-build/package-lock.json
+
+      - name: Install deps
+        run: |
+          npm ci
+          npm --prefix tools/card-build ci --omit=dev
+
+      - name: Build module zip
+        run: |
+          node scripts/build-bridge.mjs
+          node scripts/build-module.mjs
+          node tools/card-build/bin/card-build.js dist/module dist/hoyolab-module.zip
+
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/hoyolab-module.zip
+          generate_release_notes: true
