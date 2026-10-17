@@ -14,7 +14,7 @@
 {
   "id": "dev.finall.hoyolab",
   "name": "米游社",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "versionCode": 5,
   "apiVersion": 2,
   "author": "finall1008",
@@ -31,7 +31,7 @@ npm --prefix tools/card-build ci
 node scripts/build-home-assets.mjs
 npm run build:bridge
 node scripts/build-module.mjs
-node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.4.zip
+node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.5.zip
 ```
 
 构建过程：

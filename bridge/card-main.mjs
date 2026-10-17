@@ -14,6 +14,7 @@ import { bridgeCardProvider } from './card-provider.mjs';
   'use strict';
 
   var BACKGROUND_PAGES = ['home', 'genshin', 'hsr', 'zzz'];
+  var REFRESH_TIMEOUT_MS = 30000;
 
   function fail(message) {
     if (typeof bridge !== 'undefined' && bridge.log) {
@@ -47,36 +48,77 @@ import { bridgeCardProvider } from './card-provider.mjs';
       return;
     }
     var provider = bridgeCardProvider(bridge);
-    function readBackgrounds() {
-      return Promise.all(BACKGROUND_PAGES.map(function (page) {
-        return bridge.storage.get('hoyolab.background.' + page);
-      })).then(function (values) {
-        var map = {};
-        BACKGROUND_PAGES.forEach(function (page, index) {
-          if (values[index]) map[page] = values[index];
-        });
-        return map;
+    var loadedBackgrounds = {};
+    var pendingBackgrounds = {};
+    var currentPage = 0;
+
+    // Read one page per bridge batch. The live carrier returns synchronous storage
+    // results in one HostVar per batch; combining all four base64 backgrounds creates
+    // a ~700K result that the carrier can drop, leaving the card on the default image
+    // and stalling every later request.
+    function readBackground(pageIndex) {
+      var page = BACKGROUND_PAGES[pageIndex] || 'home';
+      return bridge.storage.get('hoyolab.background.' + page).then(function (value) {
+        if (value) loadedBackgrounds[page] = value;
+        else delete loadedBackgrounds[page];
+        return page;
       });
     }
-    function refreshBackgrounds() {
-      return readBackgrounds().then(function (map) {
-        controller.setBackgrounds(map);
+
+    function refreshBackgrounds(pageIndex) {
+      var page = BACKGROUND_PAGES[pageIndex] || 'home';
+      if (pendingBackgrounds[page]) return pendingBackgrounds[page];
+      var request = readBackground(pageIndex).then(function () {
+        controller.setBackgrounds(loadedBackgrounds);
       }).catch(function (error) {
         fail('背景读取失败: ' + error);
       });
+      pendingBackgrounds[page] = request;
+      request.then(function () {
+        delete pendingBackgrounds[page];
+      }, function () {
+        delete pendingBackgrounds[page];
+      });
+      return request;
     }
+
+    function refreshWithTimeout(promise, ms) {
+      return new Promise(function (resolve, reject) {
+        var timer = setTimeout(function () {
+          reject(new Error('刷新超时，请检查网络后重试'));
+        }, ms);
+        promise.then(function (value) {
+          clearTimeout(timer);
+          resolve(value);
+        }, function (error) {
+          clearTimeout(timer);
+          reject(error);
+        });
+      });
+    }
+
     var controller = globalThis.HoyoCard.mount({
       canvas: canvas,
       initialSnapshot: provider.initialSnapshot,
       refresh: function (scope) {
-        return provider.refresh(scope).then(function (snapshot) {
-          refreshBackgrounds();
+        return refreshWithTimeout(provider.refresh(scope), REFRESH_TIMEOUT_MS).then(function (snapshot) {
+          // Refresh only the page currently on screen. A full four-page read is the
+          // failure mode this path is designed to avoid.
+          refreshBackgrounds(currentPage);
           return snapshot;
         });
       },
+      onPageChange: function (page) {
+        currentPage = page;
+        refreshBackgrounds(page);
+      },
       onStatus: function () {},
     });
-    refreshBackgrounds();
+    try {
+      var initialPage = controller.getState().page;
+      if (typeof initialPage === 'number' && initialPage >= 0) currentPage = initialPage;
+    } catch (_) { /* keep home */ }
+    refreshBackgrounds(currentPage);
     // 前台刷新或后台任务写入共享快照后，载体把 snapshotRev 同步进 localStorage；
     // 下一次 requestRefresh/刷新广播时重读即可。这里同时挂 onRefresh 兜底。
     if (typeof bridge.card.onRefresh === 'function') {
@@ -84,7 +126,7 @@ import { bridgeCardProvider } from './card-provider.mjs';
         try {
           var next = bridge.card.readSnapshot();
           if (next) controller.setSnapshot(next);
-          refreshBackgrounds();
+          refreshBackgrounds(currentPage);
         } catch (error) {
           fail('快照重读失败: ' + error);
         }
