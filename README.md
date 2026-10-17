@@ -2,11 +2,11 @@
 
 适用于 Rear Card Bridge API 2 的米游社卡片模块，支持原神、崩坏：星穹铁道和绝区零。模块包含四页卡片、米游社扫码设置页和后台便笺刷新，可导入 ZIP 使用，运行时无需电脑或本地服务。
 
-当前版本：**0.1.5**。作者：[finall1008](https://github.com/finall1008)。模块 ID：`dev.finall.hoyolab`，`versionCode`：`6`。
+当前版本：**0.1.6**。作者：[finall1008](https://github.com/finall1008)。模块 ID：`dev.finall.hoyolab`，`versionCode`：`7`。
 
 ## 安装与使用
 
-1. 从 [Releases](https://github.com/finall1008/rear-card-hoyolab/releases) 获取 `rear-card-hoyolab-0.1.5.zip`，在支持 API 2 的卡片桥中导入模块。
+1. 从 [Releases](https://github.com/finall1008/rear-card-hoyolab/releases) 获取 `rear-card-hoyolab-0.1.6.zip`，在支持 API 2 的卡片桥中导入模块。
 2. 打开模块设置页，用国服米游社 App 扫码并确认登录。页面分别显示扫码、Token、Cookie、设备指纹和角色读取结果；中间步骤失败时可继续认证。
 3. 选择需要绑定的游戏角色，保存后查询便笺，并将卡片应用到背屏。
 4. 按需在卡片桥中启用后台刷新、设置模块刷新间隔；默认间隔为 15 分钟，实际执行受宿主和系统调度影响。
@@ -44,16 +44,16 @@ npm --prefix tools/card-build ci
 node scripts/build-home-assets.mjs
 npm run build:bridge
 node scripts/build-module.mjs
-node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.5.zip
+node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.6.zip
 ```
 
-产物为 `dist/rear-card-hoyolab-0.1.5.zip`。ZIP 根目录包含 `module.json`、`card/`、`webroot/` 和 `background/`；脚本、运行依赖、体力图标和 `card/assets/bg-*.jpg` / `bg-*-blur.jpg` 角色背景均内置。`bridge-shim.js` 由宿主注入，包内设置页提供对应源码下载。
+产物为 `dist/rear-card-hoyolab-0.1.6.zip`。ZIP 根目录包含 `module.json`、`card/`、`webroot/` 和 `background/`；脚本、运行依赖、体力图标和 `card/assets/bg-*.jpg` / `bg-*-blur.jpg` 角色背景均内置。`bridge-shim.js` 由宿主注入，包内设置页提供对应源码下载。
 
 构建结构和宿主契约见 [API 2 模块说明](BRIDGE.md)，绘制入口见 [card/README.md](card/README.md)。
 
 ## CI 发布与商店同步
 
-推送与当前版本一致的 `v*` 标签（如 `v0.1.5`）触发 [发布工作流](.github/workflows/release.yml)：运行测试、构建 ZIP、上传 GitHub Release，然后同步到 [模块商店](https://github.com/finall1008/rear-card-modules)。推送普通分支不发布版本。
+推送与当前版本一致的 `v*` 标签（如 `v0.1.6`）触发 [发布工作流](.github/workflows/release.yml)：运行测试、构建 ZIP、上传 GitHub Release，然后同步到 [模块商店](https://github.com/finall1008/rear-card-modules)。推送普通分支不发布版本。
 
 在本仓库 **Settings → Secrets and variables → Actions** 配置 `MODULE_STORE_TOKEN`。它需要是可访问 `finall1008/rear-card-modules` 的 Personal Access Token，并具有该商店仓库的 **Contents: Read and write** 权限；默认 `GITHUB_TOKEN` 不具备跨仓库写入权限。
 

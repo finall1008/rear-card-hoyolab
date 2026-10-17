@@ -37,6 +37,12 @@ test('card DTO preserves zero/unknown/rewards and maps all three note structures
   assert.equal(snapshot.games.zzz.list.find(row => row.label === '今日签到').value, '未签到');
   assert.equal(snapshot.games.zzz.list.find(row => row.label === '录像店经营').value, '待结算');
 });
+test('snapshot preserves cached AOD backgrounds across refresh', () => {
+  const previous = buildCardSnapshot(state());
+  previous.backgrounds = { home: { custom: 'data:image/jpeg;base64,AA==', customBlur: null } };
+  const next = buildCardSnapshot(state(), previous);
+  assert.deepEqual(next.backgrounds, previous.backgrounds);
+});
 test('failed refresh retains same-account same-role values but never after logout/role change', () => {
   const s = state(), old = buildCardSnapshot(s);
   s.notes.genshin = { roleId: 'g1', status: 'error', updatedAt: at, error: { message: '验证失败' } };

@@ -15,6 +15,8 @@ import { bridgeCardProvider } from './card-provider.mjs';
 
   var BACKGROUND_PAGES = ['home', 'genshin', 'hsr', 'zzz'];
   var REFRESH_TIMEOUT_MS = 30000;
+  // Leave room for the card snapshot's data fields below the bridge's 512K limit.
+  var SNAPSHOT_BACKGROUND_LIMIT = 460 * 1024;
 
   function fail(message) {
     if (typeof bridge !== 'undefined' && bridge.log) {
@@ -48,25 +50,77 @@ import { bridgeCardProvider } from './card-provider.mjs';
       return;
     }
     var provider = bridgeCardProvider(bridge);
+    var cachedSnapshot = bridge.card.readSnapshot ? bridge.card.readSnapshot() : null;
     var loadedBackgrounds = {};
+    if (cachedSnapshot && cachedSnapshot.backgrounds && typeof cachedSnapshot.backgrounds === 'object') {
+      BACKGROUND_PAGES.forEach(function (page) {
+        var value = cachedSnapshot.backgrounds[page];
+        if (value && typeof value === 'object' && typeof value.custom === 'string' && value.custom) {
+          loadedBackgrounds[page] = value;
+        }
+      });
+    }
     var pendingBackgrounds = {};
     var currentPage = 0;
+    var snapshotSaveChain = Promise.resolve();
+
+    function pageKey(pageIndex) {
+      return BACKGROUND_PAGES[pageIndex] || 'home';
+    }
 
     // Read one page per bridge batch. The live carrier returns synchronous storage
     // results in one HostVar per batch; combining all four base64 backgrounds creates
     // a ~700K result that the carrier can drop, leaving the card on the default image
     // and stalling every later request.
     function readBackground(pageIndex) {
-      var page = BACKGROUND_PAGES[pageIndex] || 'home';
+      var page = pageKey(pageIndex);
       return bridge.storage.get('hoyolab.background.' + page).then(function (value) {
         if (value) loadedBackgrounds[page] = value;
         else delete loadedBackgrounds[page];
+        persistBackgrounds();
         return page;
       });
     }
 
+    // The bridge's card snapshot is the only data path read synchronously before the
+    // renderer's first frame. Keep a bounded set of backgrounds there so AOD recovery
+    // can draw them before storage.get resolves.
+    function snapshotBackgrounds() {
+      var all = {};
+      BACKGROUND_PAGES.forEach(function (page) {
+        if (loadedBackgrounds[page]) all[page] = loadedBackgrounds[page];
+      });
+      if (JSON.stringify(all).length <= SNAPSHOT_BACKGROUND_LIMIT) return all;
+      var current = pageKey(currentPage);
+      var preferred = {};
+      if (loadedBackgrounds.home) preferred.home = loadedBackgrounds.home;
+      if (current !== 'home' && loadedBackgrounds[current]) preferred[current] = loadedBackgrounds[current];
+      if (JSON.stringify(preferred).length <= SNAPSHOT_BACKGROUND_LIMIT) return preferred;
+      var homeOnly = {};
+      if (loadedBackgrounds.home) homeOnly.home = loadedBackgrounds.home;
+      if (JSON.stringify(homeOnly).length <= SNAPSHOT_BACKGROUND_LIMIT) return homeOnly;
+      return {};
+    }
+
+    function persistBackgrounds() {
+      if (!bridge.card.saveSnapshot) return;
+      snapshotSaveChain = snapshotSaveChain.then(function () {
+        var base = bridge.card.readSnapshot() || {};
+        var next = {};
+        for (var key in base) {
+          if (Object.prototype.hasOwnProperty.call(base, key)) next[key] = base[key];
+        }
+        var backgrounds = snapshotBackgrounds();
+        if (Object.keys(backgrounds).length) next.backgrounds = backgrounds;
+        else delete next.backgrounds;
+        return bridge.card.saveSnapshot(next);
+      }).catch(function (error) {
+        fail('背景快照保存失败: ' + error);
+      });
+    }
+
     function refreshBackgrounds(pageIndex) {
-      var page = BACKGROUND_PAGES[pageIndex] || 'home';
+      var page = pageKey(pageIndex);
       if (pendingBackgrounds[page]) return pendingBackgrounds[page];
       var request = readBackground(pageIndex).then(function () {
         controller.setBackgrounds(loadedBackgrounds);
@@ -100,6 +154,7 @@ import { bridgeCardProvider } from './card-provider.mjs';
     var controller = globalThis.HoyoCard.mount({
       canvas: canvas,
       initialSnapshot: provider.initialSnapshot,
+      backgrounds: loadedBackgrounds,
       refresh: function (scope) {
         return refreshWithTimeout(provider.refresh(scope), REFRESH_TIMEOUT_MS).then(function (snapshot) {
           // Refresh only the page currently on screen. A full four-page read is the
@@ -119,6 +174,7 @@ import { bridgeCardProvider } from './card-provider.mjs';
       if (typeof initialPage === 'number' && initialPage >= 0) currentPage = initialPage;
     } catch (_) { /* keep home */ }
     refreshBackgrounds(currentPage);
+    if (currentPage !== 0 && !loadedBackgrounds.home) refreshBackgrounds(0);
     // 前台刷新或后台任务写入共享快照后，载体把 snapshotRev 同步进 localStorage；
     // 下一次 requestRefresh/刷新广播时重读即可。这里同时挂 onRefresh 兜底。
     if (typeof bridge.card.onRefresh === 'function') {
