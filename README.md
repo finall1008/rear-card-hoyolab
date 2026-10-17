@@ -49,6 +49,14 @@ node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.3
 
 构建结构和宿主契约见 [API 2 模块说明](BRIDGE.md)，绘制入口见 [card/README.md](card/README.md)。
 
+## CI 发布与商店同步
+
+推送与当前版本一致的 `v*` 标签（如 `v0.1.3`）触发 [发布工作流](.github/workflows/release.yml)：运行测试、构建 ZIP、上传 GitHub Release，然后同步到 [模块商店](https://github.com/finall1008/rear-card-modules)。推送普通分支不发布版本。
+
+在本仓库 **Settings → Secrets and variables → Actions** 配置 `MODULE_STORE_TOKEN`。它需要是可访问 `finall1008/rear-card-modules` 的 Personal Access Token，并具有该商店仓库的 **Contents: Read and write** 权限；默认 `GITHUB_TOKEN` 不具备跨仓库写入权限。
+
+同步调用商店仓库的 `scripts/publish-module.py`，读取本次 Release ZIP 的 `module.json`，更新现有 `dev.finall.hoyolab` 条目的版本、描述、作者和固定版本下载地址。分类和预览图链接保持商店配置；重复同步不创建多余提交，较旧版本不覆盖较新版本。缺少凭据或同步失败时 CI 会报错，已上传的 Release 可以在修复后重新运行工作流完成同步。
+
 ## 本地开发
 
 ```sh

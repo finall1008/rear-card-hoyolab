@@ -4,6 +4,10 @@ on:
   push:
     tags: ['v*']
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release:
     runs-on: ubuntu-latest
@@ -42,3 +46,26 @@ jobs:
           files: dist/rear-card-hoyolab-*.zip
           body_path: RELEASE.md
           generate_release_notes: false
+
+      - name: Check module shop credentials
+        env:
+          MODULE_STORE_TOKEN: ${{ secrets.MODULE_STORE_TOKEN }}
+        run: |
+          test -n "$MODULE_STORE_TOKEN" || { echo "::error::Set MODULE_STORE_TOKEN with Contents read/write access to finall1008/rear-card-modules"; exit 1; }
+
+      - name: Checkout module shop publisher
+        uses: actions/checkout@v4
+        with:
+          repository: finall1008/rear-card-modules
+          ref: main
+          path: _module-store
+          token: ${{ secrets.MODULE_STORE_TOKEN }}
+          persist-credentials: false
+
+      - name: Update module shop
+        env:
+          MODULE_STORE_TOKEN: ${{ secrets.MODULE_STORE_TOKEN }}
+        run: |
+          python3 _module-store/scripts/publish-module.py \
+            "dist/rear-card-hoyolab-${RELEASE_TAG#v}.zip" \
+            --repository "$GITHUB_REPOSITORY" --tag "$RELEASE_TAG"
