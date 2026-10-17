@@ -12,6 +12,7 @@ const FILES = new Map([
   ['/', ['preview/index.html', 'text/html; charset=utf-8']],
   ['/preview.css', ['preview/style.css', 'text/css; charset=utf-8']],
   ['/preview.js', ['preview/app.js', 'text/javascript; charset=utf-8']],
+  ['/home-assets.js', ['card/home-assets.js', 'text/javascript; charset=utf-8']],
   ['/card.js', ['card/card.js', 'text/javascript; charset=utf-8']],
   ['/source.tar.gz', ['dist/bridge/webroot/source.tar.gz', 'application/gzip']],
 ]);
@@ -68,7 +69,7 @@ export function createPreviewServer(provider) {
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'no-referrer');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; style-src 'self'; img-src 'self' data:; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'");
     const json = (status, body) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' }); res.end(JSON.stringify(body)); };
     const port = server.address().port;
     if (![ `127.0.0.1:${port}`, `localhost:${port}` ].includes(req.headers.host)) return json(403, { error: '仅接受本地访问' });

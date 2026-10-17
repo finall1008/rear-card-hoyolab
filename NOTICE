@@ -1,6 +1,9 @@
-rear-card-hoyolab — 米游社卡片设置原型
+rear-card-hoyolab — 米游社背屏卡片
 
-This work includes a JavaScript adaptation of authentication, request signing,
+Project maintainer and module author: finall1008
+https://github.com/finall1008/rear-card-hoyolab
+
+This project includes a JavaScript adaptation of authentication, request signing,
 device-fingerprint and daily-note request logic from The Latte Helper:
 https://github.com/pizza-studio/PizzaHelperUnited
 Upstream revision: 29a063c4d906d9f02954ddf1f422e9a4d087aa59
@@ -10,12 +13,18 @@ License: GNU Affero General Public License, version 3 or later
 (SPDX-License-Identifier: AGPL-3.0-or-later).
 See LICENSE and UPSTREAM.md.
 
-Modified in 2026: translated Swift protocol logic to JavaScript; added a local
-Node HTTP host, owner-only file persistence, settings UI, diagnostics and tests.
-This prototype is independent of, and not endorsed by, Pizza Studio or HoYoverse.
-No upstream branding, artwork or app binaries are redistributed.
+Project-specific code provides the Node development host, file persistence,
+settings UI, API 2 bridge adapter, Canvas renderer, offline assets and build tools.
+This project is independent of, and not endorsed by, Pizza Studio or HoYoverse.
 
-Third-party dependency: qrcode 1.5.4 (MIT); dependency license remains in
-node_modules/qrcode/license. Portable MD5: @noble/hashes 2.4.0 (MIT).
-Browser bundle build tool: esbuild 0.28.2 (MIT).
-Transitive dependencies retain their own licenses.
+Three stamina resource game icon PNGs are redistributed from the same upstream
+revision. Game artwork remains copyright miHoYo / HoYoverse and is not covered
+by the JavaScript source license. Source paths are recorded in
+card/assets/sources.json. No upstream app binaries are redistributed.
+
+Runtime dependencies: qrcode 1.5.4 (MIT), @noble/hashes 2.4.0 (MIT).
+Browser build dependency: esbuild 0.28.2 (MIT).
+Card build dependencies: @babel/core 8.0.7 (MIT),
+@babel/plugin-transform-async-to-generator 8.0.1 (MIT), fflate 0.8.3 (MIT).
+Transitive dependencies retain their own licenses. Bundled dependency notices
+are included in webroot/THIRD_PARTY_LICENSES.txt.

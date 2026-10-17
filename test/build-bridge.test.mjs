@@ -113,7 +113,7 @@ test('buildBridge writes an offline bridge copy without touching the desktop pro
   assert.match(app, new RegExp(SCHEDULER_NOTE));
   assert.doesNotMatch(app, /本机服务|本地服务/);
   assert.match(app, /已连接卡片桥/);
-  assert.match(app, /跟随米游社组件的默认角色/);
+  assert.match(app, /该接口不带玩家 ID，跟随默认角色/);
   assert.match(app, /阶段 \$\{textOf\(actionError\.stage\)\}/);
 
   const scripts = [...html.matchAll(/<script\b[^>]*>/g)].map((match) => match[0]);
@@ -129,9 +129,9 @@ test('buildBridge writes an offline bridge copy without touching the desktop pro
   assert.match(html, new RegExp(SCHEDULER_NOTE));
   assert.match(html, /保存选择</);
   assert.doesNotMatch(html, /保存选择与间隔|本机服务|本地服务/);
-  assert.match(html, /跟随米游社组件的默认角色/);
+  assert.match(html, /id="note-grid"/);
 
-  const names = execFileSync('tar', ['-tzf', built.archive], { encoding: 'utf8' }).trim().split('\n');
+  const names = execFileSync('tar', ['-tzf', built.archive], { encoding: 'utf8' }).trim().split(/\r?\n/);
   for (const member of SOURCE_MEMBERS) assert.ok(names.some((name) => name === member || name.startsWith(`${member}/`)), member);
   for (const name of names) {
     for (const part of name.split('/')) {

@@ -14,6 +14,9 @@ export const SOURCE_MEMBERS = [
   'bridge',
   'card',
   'preview',
+  'previews',
+  'tools/card-build',
+  '.github',
   'server.mjs',
   'preview-server.mjs',
   'CARD.md',
@@ -27,6 +30,7 @@ export const SOURCE_MEMBERS = [
   'README.md',
   'BRIDGE.md',
   'UPSTREAM.md',
+  'RELEASE.md',
   '.gitignore',
 ];
 
@@ -70,6 +74,8 @@ function relabel(source) {
 }
 
 export function transformApp(source) {
+  // Git checkouts on Windows may use CRLF; match the same build templates on both platforms.
+  source = source.replace(/\r\n/g, '\n');
   let next = replaceOnce(
     source,
     'async function fetchJson(method, path, body, timeoutMs) {\n  const headers = { Accept: \'application/json\' };',

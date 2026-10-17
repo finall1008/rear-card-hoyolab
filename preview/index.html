@@ -1,9 +1,9 @@
 <!doctype html>
 <html lang="zh-CN">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>提瓦特之外 · 背屏卡片原型</title><link rel="stylesheet" href="/preview.css"></head>
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>提瓦特之外 · 背屏卡片预览</title><link rel="stylesheet" href="/preview.css"></head>
 <body>
   <main>
-    <header><div><span class="eyebrow">HOYOLAB / REAR DISPLAY</span><h1>三份日常，一眼看完。</h1><p>四页 Canvas 卡片原型 · 使用原设置页已保存的真实数据</p></div><a href="http://127.0.0.1:18766" target="_blank" rel="noreferrer">打开原设置页 ↗</a></header>
+    <header><div><span class="eyebrow">HOYOLAB / REAR DISPLAY</span><h1>三份日常，一眼看完。</h1><p>四页卡片 · 使用本地设置页保存的便笺</p></div><a href="http://127.0.0.1:18766" target="_blank" rel="noreferrer">打开设置页 ↗</a></header>
     <div class="preview-layout">
       <section class="stage" aria-label="背屏卡片预览">
         <div class="device">
@@ -13,9 +13,9 @@
         <div class="preview-controls"><div id="tabs" role="group" aria-label="切换预览页"><button data-page="0" aria-pressed="true">总览</button><button data-page="1" aria-pressed="false">原神</button><button data-page="2" aria-pressed="false">星穹铁道</button><button data-page="3" aria-pressed="false">绝区零</button></div><button id="refresh">刷新全部</button></div>
         <p id="status" role="status" aria-live="polite">正在读取已保存的数据…</p>
       </section>
-      <aside><span class="eyebrow">INTERACTION NOTES</span><h2>照着背屏的方式用</h2><ol><li><b>左右滑动</b><span>总览 → 原神 → 星穹铁道 → 绝区零</span></li><li><b>下拉刷新</b><span>总览更新三款游戏；详情只更新当前游戏。</span></li><li><b>详情两栏布局</b><span>左体力、右任务清单，一屏放下不滚动；放不下的项直接省略。</span></li><li><b>先存储，后呈现</b><span>原始便笺保存至已有状态存储，展示快照另外落盘。失败保留上次成功值，并标注失败。</span></li></ol><p class="note">左侧圆形为镜头遮挡示意，关键内容只放在右侧安全区。网页仅供视觉和交互预览，尚未进行真机安装或触摸验证。</p><p class="note">不会自动发起米游社请求。页面打开只读取本地状态；手动下拉或点击刷新才访问上游。浏览器缓存只包含展示数据，不含登录凭据。</p></aside>
+      <aside><span class="eyebrow">INTERACTION NOTES</span><h2>照着背屏的方式用</h2><ol><li><b>左右滑动</b><span>总览 → 原神 → 星穹铁道 → 绝区零</span></li><li><b>下拉刷新</b><span>总览更新三款游戏；详情只更新当前游戏。</span></li><li><b>详情两栏布局</b><span>左体力、右任务清单，一屏放下不滚动；放不下的项直接省略。</span></li><li><b>先存储，后呈现</b><span>原始便笺保存至已有状态存储，展示快照另外落盘。失败保留上次成功值，并标注失败。</span></li></ol><p class="note">左侧圆形为镜头遮挡示意，关键内容只放在右侧安全区。网页用于视觉和交互预览，手机表现依赖宿主和实际设备。</p><p class="note">不会自动发起米游社请求。页面打开只读取本地状态；手动下拉或点击刷新才访问上游。浏览器缓存只包含展示数据，不含登录凭据。</p></aside>
     </div>
     <footer><p class="note">基于 The Latte Helper · AGPL-3.0-or-later · <a href="/source.tar.gz">下载完整源码</a></p></footer>
   </main>
-  <script src="/card.js"></script><script src="/preview.js"></script>
+  <script src="/home-assets.js"></script><script src="/card.js"></script><script src="/preview.js"></script>
 </body></html>

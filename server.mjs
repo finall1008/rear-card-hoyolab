@@ -11,7 +11,7 @@ import { HoyoError, errorJSON } from './lib/hoyo.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = new Map([['/', ['index.html', 'text/html; charset=utf-8']], ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/style.css', ['style.css', 'text/css; charset=utf-8']]]);
-const SOURCE_FILES = ['package.json', 'package-lock.json', 'server.mjs', 'lib', 'bridge', 'card', 'preview', 'preview-server.mjs', 'CARD.md', 'public', 'scripts', 'test', 'README.md', 'BRIDGE.md', 'UPSTREAM.md', 'LICENSE', 'NOTICE', '.gitignore'];
+const SOURCE_FILES = ['package.json', 'package-lock.json', 'server.mjs', 'lib', 'bridge', 'card', 'preview', 'preview-server.mjs', 'CARD.md', 'public', 'scripts', 'test', 'README.md', 'BRIDGE.md', 'UPSTREAM.md', 'LICENSE', 'NOTICE', 'RELEASE.md', 'previews', 'tools/card-build', '.github', '.gitignore'];
 
 export function createServer(service) {
   const csrf = randomBytes(32).toString('hex');
@@ -41,7 +41,7 @@ export function createServer(service) {
       if (req.method === 'GET' && path === '/source') {
         // Fixed source allowlist. Credential storage, .git and node_modules never enter archive.
         for (const file of SOURCE_FILES) await stat(resolve(ROOT, file));
-        const archive = spawn('tar', ['-czf', '-', ...SOURCE_FILES], { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] });
+        const archive = spawn('tar', ['-czf', '-', '--exclude=.local', '--exclude=node_modules', '--exclude=.git', '--exclude=dist', ...SOURCE_FILES], { cwd: ROOT, stdio: ['ignore', 'pipe', 'ignore'] });
         res.writeHead(200, { 'Content-Type': 'application/gzip', 'Content-Disposition': 'attachment; filename="rear-card-hoyolab-source.tar.gz"' });
         archive.stdout.pipe(res);
         archive.on('error', () => res.destroy());
@@ -98,6 +98,6 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const store = new FileStore(resolve(ROOT, '.local/state.json'));
   const service = new SettingsService(store);
   const server = createServer(service);
-  server.listen(port, '127.0.0.1', () => console.log(`米游社设置原型 http://127.0.0.1:${server.address().port}\n认证来源：The Latte Helper @ ${service.view().upstream.commit.slice(0, 8)}\n凭据保存在本仓库 .local/，不输出到网页或终端。`));
+  server.listen(port, '127.0.0.1', () => console.log(`米游社设置 http://127.0.0.1:${server.address().port}\n认证来源：The Latte Helper @ ${service.view().upstream.commit.slice(0, 8)}\n凭据保存在本仓库 .local/，不输出到网页或终端。`));
   server.on('error', error => { console.error(`启动失败：${error.code}`); process.exitCode = 1; });
 }

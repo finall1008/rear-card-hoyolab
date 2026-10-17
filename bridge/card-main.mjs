@@ -7,6 +7,7 @@
  * 因此这里可以正常写 async/await，但不要引入 ESM 语法残留到产物里。
  */
 import '../card/card.js';
+import '../card/home-assets.js';
 import { bridgeCardProvider } from './card-provider.mjs';
 
 (function () {

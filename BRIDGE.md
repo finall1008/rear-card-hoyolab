@@ -1,86 +1,100 @@
-# 卡片桥 API 2 接入
+# Rear Card Bridge API 2 模块
 
-## 不需要本地服务
+## 运行结构
 
-电脑原型保持原样：浏览器 → 本机 Node 调试宿主 → 米游社。
+模块由卡片绘制、设置页和后台刷新入口组成。设置页及后台通过宿主的 `bridge.net.request` 访问米游社官方接口，使用 `bridge.storage` 保存账号与便笺，使用 `bridge.card` 发布展示快照。
 
-桥端是另一份构建产物：设置页/桥后台 WebView → **bridge.net.request → 米游社官方接口**。没有 HTTP daemon、localhost、Node、电脑或额外常驻进程，也不让普通浏览器 fetch 去发送受限 Cookie/UA 请求头。
+`lib/hoyo.mjs` 和 `lib/service.mjs` 为协议与状态核心；`bridge/runtime.mjs` 提供宿主网络和存储适配。安装模块不运行 Node、本地 HTTP 服务或账号中转服务。
 
-两边共享同一份 [认证协议](lib/hoyo.mjs) 与 [状态机](lib/service.mjs)。[桥适配器](bridge/runtime.mjs) 只替换宿主能力，不改 App QR、SToken、Cookie、DS、设备 FP 和 full→widget 调用顺序。
+## 模块描述
 
-## 构建
-
-```bash
-npm ci
-npm run build:bridge
-```
-
-输出：
-
-```text
-dist/bridge/
-├── webroot/
-│   ├── index.html          # 第一个脚本是宿主提供的 bridge-shim.js
-│   ├── runtime.js          # 浏览器自包含包：认证核心 + QR + MD5 + 桥适配
-│   ├── app.js
-│   ├── style.css
-│   └── source.tar.gz       # 对应源码，不含账号数据
-└── background/
-    └── main.js             # 自包含入口，导出全局 refresh()
-```
-
-- 只转换**构建副本**中的宿主调用与说明；[电脑页面](public/index.html) 及其脚本、样式不修改。
-- `bridge-shim.js` 由卡片桥注入，不打包假桥或浏览器模拟实现；直接双击输出 HTML 不等于桥运行环境。
-- QR、MD5 等依赖已打进包，不运行 npm，不访问 CDN，不依赖 Node crypto/fs/http。
-- 此构建仅输出认证/设置/后台适配，**不包含可安装 ZIP**；另有 [四页 Canvas 原型](CARD.md)，不能把这两个目录直接宣称成完整模块。
-
-后续组装模块时，描述至少包含：
+模块描述由 `scripts/build-module.mjs` 生成：
 
 ```json
 {
   "id": "dev.finall.hoyolab",
   "name": "米游社",
-  "version": "0.1.0",
-  "versionCode": 1,
+  "version": "0.1.3",
+  "versionCode": 4,
   "apiVersion": 2,
+  "author": "finall1008",
   "capabilities": ["network", "storage"],
   "background": {"intervalMinutes": 15}
 }
 ```
 
-还需提供 `card/index.html`、Canvas 脚本，使用桥的卡片构建工具编译 async/await 后再打 ZIP。不修改桥的 Android API，不硬编码载体 productId，不安装或操作手机。
+## 构建与包结构
+
+```sh
+npm ci
+npm --prefix tools/card-build ci
+node scripts/build-home-assets.mjs
+npm run build:bridge
+node scripts/build-module.mjs
+node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.3.zip
+```
+
+构建过程：
+
+1. `build-home-assets.mjs` 将三个体力 PNG 编成离线素材脚本。
+2. `build:bridge` 在 `dist/bridge/` 输出设置页和后台脚本，设置页使用 `hoyoRuntime.request`。
+3. `build-module.mjs` 在 `dist/module/` 组装清单、卡片、设置页和后台入口。
+4. `tools/card-build` 编译 `card/**/*.js` 的 async/await 并生成安装 ZIP；设置页和后台脚本保持 WebView 可执行格式。
+
+```text
+module.json
+card/
+  index.html
+  main.js
+webroot/
+  index.html
+  runtime.js
+  app.js
+  style.css
+  source.tar.gz
+  LICENSE
+  NOTICE
+  THIRD_PARTY_LICENSES.txt
+background/
+  main.js
+```
+
+`card/main.js` 包含绘制代码、三个体力图片和桥端卡片入口。图片解码需宿主提供 `Image` 和 Canvas `drawImage`，缺少图片能力时卡片仍绘制数值与布局。`webroot/index.html` 的首个脚本是 `bridge-shim.js`，由宿主提供。直接双击设置页 HTML 不能替代宿主环境。
+
+源码包包含运行、构建和文档所需文件，排除 `.local/`、`.git/`、`node_modules/` 和 `dist/`。依赖通过各目录的锁文件恢复。
 
 ## 网络
 
-桥适配器将方法、URL、原始 JSON body、Cookie、DS、UA 与 x-rpc 头交给 `bridge.net.request`，显式 `cookies:false`，不混用 WebView Profile Cookie。
+桥网络适配转交方法、URL、JSON body、Cookie、DS、UA 和 x-rpc 请求头，设置 `cookies:false`、`redirect:'manual'`、`responseType:'text'`。
 
-唯一的内容协商适配是 `Accept-Encoding: identity`：当前桥原生文本响应不会解码调用方主动请求的 gzip/br 字节；不能把压缩字节直接当 JSON。该项不是身份认证降级，所有认证字段保持原值。请求保持系统 TLS 校验，3xx 不暗中跳到另一个登录方案。
+请求使用 `Accept-Encoding: identity`，避免将宿主未解码的 gzip/br 字节作为 JSON 解析。认证头保持协议定义；3xx 返回错误，不切换登录协议。
 
-## 持久化
+国服认证、签名、设备指纹和 full → widget 的请求规则见 [UPSTREAM.md](UPSTREAM.md)。
 
-使用模块私有 `bridge.storage`，而不是电脑文件或网页内存：
+## 存储
 
-- `hoyolab.identity`：稳定设备 UUID 与指纹刷新基准。
-- `hoyolab.auth`：Token/Cookie、确认后的待完成步骤、角色与每角色 FP。
-- `hoyolab.settings`：角色选择；**不负责修改桥原生调度间隔**。
-- `hoyolab.note.<game>`：每游戏独立缓存，带所属登录实例与角色，防止旧后台覆盖新账号结果。
+| 键 | 内容 |
+| --- | --- |
+| `hoyolab.identity` | 稳定设备 UUID 和指纹刷新基准 |
+| `hoyolab.auth` | Token、Cookie、待完成认证状态、角色和每角色指纹 |
+| `hoyolab.settings` | 角色选择 |
+| `hoyolab.note.<game>` | 各游戏便笺、所属账号实例与角色 |
 
-每个关键认证步骤等待持久化；关掉页面后重新打开仍可恢复。桥后台的新 WebView 从同一模块存储重建认证上下文，不重新扫码。后台只写有变化的便笺，不回写旧身份和设置；退出账号或换角期间到达的旧响应不重新建立登录态。
+认证步骤等待持久化后返回，设置页重新打开可从存储恢复。后台独立上下文读取同一份数据，只更新便笺和快照；退出或换角期间到达的响应不能恢复已失效账号。
 
-这些值依赖模块数据目录隔离，**不声称 Keychain/额外加密**。账号凭据不进入模块包、日志或卡片快照。卸载模块会删除该模块数据。
+存储依赖宿主模块目录隔离，不提供额外加密。账号凭据不进入日志或展示快照；卸载模块会删除模块数据。
 
-## 后台与快照
+## 后台与刷新
 
-- 桥通过 JobScheduler 调用 `refresh()`，任务结束即销毁 WebView；没有 setInterval 常驻循环。
-- 在桥的「设置与关于」开启后台刷新，并在该模块详情设置间隔；模块描述的 15 分钟只是默认值。设置网页不假装能控制不存在的调度 API。
-- 后台只查询已认证/已选角色，不进行 QR/角色发现/指纹重生成；full→widget 分支仍与上游一致。
-- 桥任务上限 60 秒。本适配将后台连接/读取超时缩短为 3 秒，顺序执行最多 6 次便笺请求；DNS、系统调度与省电仍可能影响执行，由桥最终限制任务寿命。失败等待下一调度周期，不建立立即重试循环。
-- 保存 `bridge.card.saveSnapshot()` 时只放卡片 DTO：四页卡片所需的游戏、角色标签、来源、体力/每日指标、详情分组、状态和更新时间。widget 的 UID 为空，并标记 `widgetDefaultRole:true`，不把默认组件数据冒充为已指定 UID。
-- 单个游戏失败保留其上次成功画面；全部失败不改快照。手动刷新也发布相同格式。清除账号清空快照。
-- 快照写入不等于背屏已经重绘；卡片后续应同步读取快照画首帧，宿主重新加载时才会展示更新。
+- 宿主调度后台 `refresh()`，默认间隔 15 分钟；启用状态和间隔在卡片桥设置，设置网页只保存角色选择。
+- 后台只查询已有认证和选定角色，不进行扫码、角色发现或设备指纹重新生成。
+- 后台网络请求超时为 3 秒，三款游戏按顺序查询；完整接口失败时可能再请求 widget 接口。实际执行受系统调度、省电策略和宿主任务时限影响。
+- 手动刷新等待 `bridge.card.saveSnapshot()` 完成后返回展示快照。
+- 卡片入口同步读取已有快照，并在宿主 `bridge.card.onRefresh` 通知时重新读取；静止时无常驻帧循环。
+- 单游戏失败保留对应成功缓存；后台全部失败保留已有快照；清除账号会清空展示数据。
 
-## 验证边界
+## 验证范围
 
-自动化测试使用假的 API 2 bridge，但只提供真实契约中的 net/storage/card 方法，禁用全局 fetch。覆盖登录/恢复、前台与独立后台共享、退出期间旧响应、快照无凭据与失败保留缓存。
+测试提供契约内的 net/storage/card 方法，覆盖认证恢复、前台与后台共享存储、退出期间的在途响应、快照内容和失败缓存。
 
-浏览器平台打包成功验证没有 Node 构建依赖泄漏。**没有运行手机安装、UI 自动化或真机桥端认证验收**；电脑原型已获用户反馈跑通，不将该结果冒充真机验证。
+构建检查覆盖浏览器依赖封装、模块结构、脚本编译及源码归档。布局与手势可在浏览器验证；手机安装、真实米游社认证、图片支持及背屏重绘属于真机验收范围。

@@ -16,7 +16,6 @@
   var LOCK = 12;
   var SWIPE = 60;
   var PULL = 70;
-  var CARD_R = 868;
   var BANNER_TOP = 112;
   var BANNER_H = 44;
 
@@ -26,7 +25,11 @@
     { id: 'zzz', code: 'ZZZ', name: '绝区零', hint: '下拉刷新绝区零', primary: '电量', daily: '每日活跃', accent: '#c084fc', accentSoft: 'rgba(192,132,252,0.18)' }
   ];
   var DOT_CY = 546;
-  var WIDGET_MARK = '组件默认角色';
+  var HOME_THEMES = [
+    { paper: '#eeeade', ink: '#315c50', soft: '#d8e3d8', track: '#d5d6c8' },
+    { paper: '#e5eaf0', ink: '#395974', soft: '#cddbe7', track: '#cbd3db' },
+    { paper: '#e9ebd5', ink: '#535e2a', soft: '#d7ddac', track: '#cfd3b8' }
+  ];
 
   // QuickJS 宿主缺省没有 globalThis 与 crypto；这里就地补 polyfill，
   // 保证 lib/platform.mjs（uuid/randomInt）在模块卡片环境可运行。
@@ -222,6 +225,8 @@
     var rafId = 0;
     var recoveryTimer = 0;
     var bound = [];
+    var homeImages = {};
+    var homeImageLoaders = [];
 
     function clock() {
       if (options && typeof options.now === 'function') {
@@ -287,12 +292,6 @@
       if (game.uid != null && game.uid !== '') return 'UID ' + String(game.uid);
       if (game.source === 'full') return 'UID —';
       return '';
-    }
-
-    function homeSub(game) {
-      if (widgetRole(game)) return WIDGET_MARK;
-      var nick = nicknameText(game);
-      return nick || '—';
     }
 
     function bannerText(game) {
@@ -464,119 +463,126 @@
       ctx.closePath();
     }
 
-    function paintCard(x, y, w, h, accent, warn) {
-      round(x, y, w, h, 18);
-      ctx.fillStyle = '#221e1a';
-      ctx.fill();
-      ctx.save();
-      round(x, y, w, h, 18);
-      ctx.clip();
-      ctx.fillStyle = accent;
-      ctx.fillRect(x, y, w, 3);
-      ctx.restore();
-      round(x, y, w, h, 18);
-      ctx.lineWidth = 1.5;
-      ctx.strokeStyle = warn ? 'rgba(240,178,122,0.55)' : 'rgba(255,236,214,0.10)';
-      ctx.stroke();
+    // Images are bundled data URLs: no network and no image-loading gate on the first frame.
+    function loadHomeImages() {
+      var sources = root.HoyoCardAssets || {};
+      var ImageType = view.Image || root.Image;
+      if (typeof ImageType !== 'function') return;
+      Object.keys(sources).forEach(function (key) {
+        var img = new ImageType();
+        homeImageLoaders.push(img);
+        img.onload = function () {
+          if (stopped) return;
+          homeImages[key] = img;
+          requestDraw();
+        };
+        img.onerror = function () { if (!stopped) emitStatus({ type: 'asset-error', asset: key }); };
+        img.src = sources[key];
+      });
     }
 
-    function paintBar(x, y, w, h, ratio, color) {
-      round(x, y, w, h, h / 2);
-      ctx.fillStyle = 'rgba(255,248,240,0.10)';
-      ctx.fill();
+    function paintHomeAsset(key, x, y, size) {
+      var img = homeImages[key];
+      if (!img || typeof ctx.drawImage !== 'function') return;
+      ctx.drawImage(img, x, y, size, size);
+    }
+
+    // Generic status symbols; game resources and daily tasks use the PNG assets above.
+    function paintHomeIcon(kind, x, y, size, color, backing) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.scale(size / 32, size / 32);
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 2.2;
+      ctx.lineCap = 'round';
+      ctx.lineJoin = 'round';
+      ctx.beginPath();
+      if (kind === 'clock') {
+        ctx.arc(16, 16, 11, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(16, 9); ctx.lineTo(16, 16);
+        ctx.lineTo(22, 19); ctx.stroke();
+      } else if (kind === 'gift') {
+        round(5, 13, 22, 6, 1); ctx.stroke();
+        ctx.strokeRect(7, 19, 18, 10);
+        ctx.beginPath(); ctx.moveTo(16, 13); ctx.lineTo(16, 29);
+        ctx.moveTo(16, 13); ctx.lineTo(9, 10); ctx.lineTo(9, 5);
+        ctx.lineTo(14, 6); ctx.lineTo(16, 13); ctx.lineTo(18, 6);
+        ctx.lineTo(23, 5); ctx.lineTo(23, 10); ctx.closePath(); ctx.stroke();
+      } else if (kind === 'check') {
+        ctx.arc(16, 16, 12, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(10, 16); ctx.lineTo(14, 20);
+        ctx.lineTo(23, 11); ctx.stroke();
+      } else {
+        ctx.arc(16, 16, 12, 0, Math.PI * 2); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(16, 9); ctx.lineTo(16, 18); ctx.stroke();
+        ctx.fillRect(15, 22, 2, 2);
+      }
+      ctx.restore();
+    }
+
+    function paintHomeBar(x, y, w, ratio, theme) {
+      round(x, y, w, 7, 4); ctx.fillStyle = theme.track; ctx.fill();
       if (ratio != null && ratio > 0) {
-        var fillW = Math.max(h, w * ratio);
-        if (fillW > w) fillW = w;
-        round(x, y, fillW, h, h / 2);
-        ctx.fillStyle = color;
-        ctx.fill();
+        round(x, y, Math.min(w, Math.max(7, w * ratio)), 7, 4);
+        ctx.fillStyle = theme.ink; ctx.fill();
       }
     }
 
     function paintColumn(index) {
       var info = GAMES[index];
+      var theme = HOME_THEMES[index];
       var game = gameById(info.id);
       var rect = columnRect(index);
       var primary = game && game.primary ? game.primary : null;
       var daily = game && game.daily ? game.daily : null;
-      var errored = !!(game && game.status === 'error');
-      paintCard(rect.x, rect.y, rect.w, rect.h, info.accent, errored);
-      ctx.save();
-      round(rect.x, rect.y, rect.w, rect.h, 18);
-      ctx.clip();
-      var x = rect.x + 14;
-      var inner = rect.w - 28;
-      var y = rect.y + 32;
-      drawText('700 28px sans-serif', '#f7f1e8', 'left', 'middle', game && game.name ? String(game.name) : info.name, x, y, inner);
-      y += 38;
-      drawText('600 20px sans-serif', widgetRole(game) ? info.accent : '#d9cec0', 'left', 'middle', homeSub(game), x, y, inner);
-      y += 42;
-      drawText('600 20px sans-serif', '#b7ab9e', 'left', 'middle', metricLabel(primary, info.primary), x, y, inner);
-      y += 50;
-      var curText = fitText(displayScalar(primary && primary.current), inner - 58);
-      ctx.font = '700 54px sans-serif';
-      var curW = ctx.measureText(curText).width;
-      drawText('700 54px sans-serif', '#f7f1e8', 'left', 'middle', curText, x, y, inner);
-      var maxBase = displayScalar(primary && primary.max);
-      var maxFonts = ['600 22px sans-serif', '600 20px sans-serif', '600 18px sans-serif'];
-      var maxDrawn = false;
-      for (var mi = 0; mi < maxFonts.length && !maxDrawn; mi++) {
-        var mt = (mi === 0 ? '/ ' : '/') + maxBase;
-        ctx.font = maxFonts[mi];
-        if (curW + 6 + ctx.measureText(mt).width <= inner) {
-          drawText(maxFonts[mi], '#d9cec0', 'left', 'middle', mt, x + curW + 6, y + 10, inner - curW - 6);
-          maxDrawn = true;
-        }
-      }
-      y += 42;
-      paintBar(x, y, inner, 12, fillRatio(primary && primary.current, primary && primary.max), info.accent);
-      y += 24;
       var banner = bannerText(game);
-      var recText = banner || recoveryLine(primary);
-      var recH = 52;
-      round(x, y, inner, recH, 14);
-      ctx.fillStyle = errored ? 'rgba(240,178,122,0.10)' : info.accentSoft;
-      ctx.fill();
-      drawText('700 24px sans-serif', banner ? (errored ? '#f0b27a' : '#d9cec0') : info.accent, 'center', 'middle', recText, x + inner / 2, y + recH / 2, inner - 16);
-      y += recH + 22;
-      var dailyLabel = metricLabel(daily, info.daily);
-      var dailyValue = displayScalar(daily && daily.current) + '/' + displayScalar(daily && daily.max);
-      drawText('600 15px sans-serif', '#b7ab9e', 'left', 'middle', dailyLabel, x, y, inner * 0.44);
-      ctx.font = '700 22px sans-serif';
-      ctx.fillStyle = '#f7f1e8';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(dailyValue, Math.round(x + inner), Math.round(y - 1));
-      y += 32;
-      paintBar(x, y, inner, 12, fillRatio(daily && daily.current, daily && daily.max), info.accent);
+      var errored = !!(game && game.status === 'error');
+      var x = rect.x + 16;
+      var inner = rect.w - 32;
+      var cx = rect.x + rect.w / 2;
+      var top = rect.y;
+      ctx.save();
+      round(rect.x, top, rect.w, rect.h, 25);
+      ctx.fillStyle = theme.paper; ctx.fill(); ctx.clip();
+      drawText('700 25px sans-serif', theme.ink, 'left', 'middle', info.name, x, top + 31, inner);
+      // A soft medallion gives each game's resource its own visual identity.
+      ctx.beginPath(); ctx.arc(cx, top + 97, 37, 0, Math.PI * 2);
+      ctx.fillStyle = theme.soft; ctx.fill();
+      paintHomeAsset(info.id + 'Primary', cx - 35, top + 62, 70);
+      drawText('600 17px sans-serif', theme.ink, 'center', 'middle', metricLabel(primary, info.primary), cx, top + 151, inner);
+      drawText('700 59px sans-serif', '#28342f', 'center', 'middle', displayScalar(primary && primary.current), cx, top + 198, inner);
+      drawText('500 18px sans-serif', '#69746b', 'center', 'middle', '/ ' + displayScalar(primary && primary.max), cx, top + 239, inner);
+      paintHomeBar(x + 5, top + 261, inner - 10, fillRatio(primary && primary.current, primary && primary.max), theme);
+      paintHomeIcon(banner ? 'alert' : 'clock', x + 2, top + 281, 19, errored ? '#9a542d' : theme.ink, theme.paper);
+      drawText('600 17px sans-serif', errored ? '#9a542d' : theme.ink, 'left', 'middle', banner ? (errored ? (primary && primary.current != null ? '失败 · 旧数据' : '刷新失败') : banner) : recoveryLine(primary), x + 27, top + 291, inner - 27);
+      // Daily progress has a separate surface; completion never implies reward collection.
+      round(x - 3, top + 318, inner + 6, 70, 14);
+      ctx.fillStyle = theme.soft; ctx.fill();
+      drawText('600 16px sans-serif', theme.ink, 'center', 'middle', metricLabel(daily, info.daily), cx, top + 341, inner - 8);
+      var dailyValue = displayScalar(daily && daily.current) + ' / ' + displayScalar(daily && daily.max);
+      drawText('700 23px sans-serif', '#28342f', 'center', 'middle', dailyValue, cx, top + 369, inner - 8);
       var reward = rewardText(daily);
-      var note = reward != null ? { text: reward, color: rewardColor(reward) } : null;
-      var footY = rect.y + rect.h - 38;
-      ctx.fillStyle = 'rgba(255,244,230,0.08)';
-      ctx.fillRect(x, footY - 36, inner, 1);
-      var noteOrBanner = banner ? null : (note && note.text);
-      if (noteOrBanner) {
-        drawText('700 20px sans-serif', note.color, 'left', 'middle', noteOrBanner, x, footY - 10, inner);
+      var footer = '';
+      var footerIcon = 'alert';
+      var footerColor = '#69746b';
+      if (reward != null) {
+        footer = reward;
+        footerIcon = reward === '奖励已领' ? 'check' : (reward === '奖励未领' ? 'gift' : 'alert');
+        footerColor = reward === '奖励未领' ? '#9a542d' : theme.ink;
       }
-      drawText('500 16px sans-serif', '#b7ab9e', 'left', 'middle', formatUpdated(game && game.updatedAt), x, footY + 12, inner);
+      if (footer) {
+        paintHomeIcon(footerIcon, x + 1, top + 399, 17, footerColor, theme.paper);
+        drawText('600 14px sans-serif', footerColor, 'left', 'middle', footer, x + 25, top + 408, inner - 25);
+      }
       ctx.restore();
-    }
-
-    function paintPill(x, y, label, info) {
-      ctx.font = '700 20px sans-serif';
-      var w = ctx.measureText(label).width + 28;
-      round(x, y - 16, w, 32, 16);
-      ctx.fillStyle = info.accentSoft;
-      ctx.fill();
-      drawText('700 20px sans-serif', info.accent, 'center', 'middle', label, x + w / 2, y, null);
     }
 
     function paintDetailChrome(info, game) {
       var bits = [];
       var nick = nicknameText(game);
       var uid = uidLine(game);
-      if (widgetRole(game)) paintPill(SAFE_L, 84, WIDGET_MARK, info);
-      else {
+      if (!widgetRole(game)) {
         if (nick) bits.push(nick);
         if (uid) bits.push(uid);
         drawText('600 20px sans-serif', '#d9cec0', 'left', 'middle', bits.length ? bits.join(' · ') : '—', SAFE_L, 84, 400);
@@ -590,86 +596,87 @@
       drawText('600 22px sans-serif', game && game.status === 'error' ? '#f0b27a' : '#d9cec0', 'left', 'middle', banner, SAFE_L + 16, BANNER_TOP + BANNER_H / 2, SAFE_R - SAFE_L - 32);
     }
 
-    function paintDetailPrimary(info, game, y, w, h) {
+    function paintWidgetDetail(info, game, top, h) {
+      var theme = HOME_THEMES[page - 1];
       var primary = game && game.primary ? game.primary : null;
       var daily = game && game.daily ? game.daily : null;
-      paintCard(SAFE_L, y, w, h, info.accent, false);
-      var x = SAFE_L + 20;
-      var inner = w - 40;
-      drawText('600 22px sans-serif', '#b7ab9e', 'left', 'middle', metricLabel(primary, info.primary), x, y + 36, inner);
-      var curText = fitText(displayScalar(primary && primary.current), inner - 84);
-      ctx.font = '700 68px sans-serif';
-      var curW = ctx.measureText(curText).width;
-      drawText('700 68px sans-serif', '#f7f1e8', 'left', 'middle', curText, x, y + 108, inner);
-      var maxBase = displayScalar(primary && primary.max);
-      var maxFonts = ['600 30px sans-serif', '600 24px sans-serif', '600 20px sans-serif'];
-      var maxDrawn = false;
-      for (var mi = 0; mi < maxFonts.length && !maxDrawn; mi++) {
-        var mt = (mi === 0 ? '/ ' : '/') + maxBase;
-        ctx.font = maxFonts[mi];
-        if (curW + 6 + ctx.measureText(mt).width <= inner) {
-          drawText(maxFonts[mi], '#d9cec0', 'left', 'middle', mt, x + curW + 6, y + 118, inner - curW - 6);
-          maxDrawn = true;
-        }
+      var compact = h < 370;
+      var panelW = 256;
+      var leftX = SAFE_L + 16;
+      var leftW = panelW - 32;
+      var cx = SAFE_L + panelW / 2;
+      // Match the overview's type scale, soft surfaces and spacing.
+      round(SAFE_L, top, panelW, h, 25);
+      ctx.fillStyle = theme.paper; ctx.fill();
+      ctx.save();
+      round(SAFE_L, top, panelW, h, 25); ctx.clip();
+      if (compact) {
+        paintHomeAsset(info.id + 'Primary', leftX + 12, top + 18, 46);
+        drawText('600 20px sans-serif', theme.ink, 'left', 'middle', metricLabel(primary, info.primary), leftX + 74, top + 41, leftW - 74);
+      } else {
+        ctx.beginPath(); ctx.arc(cx, top + 62, 37, 0, Math.PI * 2);
+        ctx.fillStyle = theme.soft; ctx.fill();
+        paintHomeAsset(info.id + 'Primary', cx - 33, top + 29, 66);
+        drawText('600 19px sans-serif', theme.ink, 'center', 'middle', metricLabel(primary, info.primary), cx, top + 119, leftW);
       }
-      paintBar(x, y + 152, inner, 12, fillRatio(primary && primary.current, primary && primary.max), info.accent);
-      drawText('600 20px sans-serif', info.accent, 'left', 'middle', recoveryLine(primary), x, y + 186, inner);
-      // 每日块锚定卡底；高度有限时压缩分隔线和空隙
-      var dy = y + h - 128;
+      drawText('700 64px sans-serif', '#28342f', 'center', 'middle', displayScalar(primary && primary.current), cx, top + (compact ? 104 : 166), leftW);
+      drawText('500 20px sans-serif', '#69746b', 'center', 'middle', '/ ' + displayScalar(primary && primary.max), cx, top + (compact ? 146 : 209), leftW);
+      paintHomeBar(leftX + 8, top + (compact ? 168 : 232), leftW - 16, fillRatio(primary && primary.current, primary && primary.max), theme);
+      paintHomeIcon('clock', leftX + 35, top + (compact ? 186 : 249), 19, theme.ink, theme.paper);
+      drawText('600 20px sans-serif', theme.ink, 'left', 'middle', recoveryLine(primary), leftX + 62, top + (compact ? 196 : 259), leftW - 66);
+      var dailyY = top + h - 110;
+      round(leftX, dailyY, leftW, 90, 16);
+      ctx.fillStyle = theme.soft; ctx.fill();
+      var dailyValue = displayScalar(daily && daily.current) + ' / ' + displayScalar(daily && daily.max);
+      if (info.id === 'genshin') {
+        drawText('600 20px sans-serif', theme.ink, 'left', 'middle', metricLabel(daily, info.daily), leftX + 14, dailyY + 25, 100);
+        drawText('700 26px sans-serif', '#28342f', 'right', 'middle', dailyValue, leftX + leftW - 14, dailyY + 25, 90);
+        paintHomeBar(leftX + 14, dailyY + 46, leftW - 28, fillRatio(daily && daily.current, daily && daily.max), theme);
+      } else {
+        // Three-digit daily scores need their own line, as on the overview.
+        drawText('600 20px sans-serif', theme.ink, 'center', 'middle', metricLabel(daily, info.daily), cx, dailyY + 21, leftW - 28);
+        drawText('700 26px sans-serif', '#28342f', 'center', 'middle', dailyValue, cx, dailyY + 49, leftW - 28);
+        paintHomeBar(leftX + 14, dailyY + 70, leftW - 28, fillRatio(daily && daily.current, daily && daily.max), theme);
+      }
       var reward = rewardText(daily);
-      if (reward != null && dy > y + 210) {
-        ctx.fillStyle = 'rgba(255,244,230,0.08)';
-        ctx.fillRect(x, dy - 26, inner, 1);
-      }
-      var detailDailyLabel = metricLabel(daily, info.daily);
-      var detailDailyValue = displayScalar(daily && daily.current) + '/' + displayScalar(daily && daily.max);
-      drawText('600 20px sans-serif', '#b7ab9e', 'left', 'middle', detailDailyLabel, x, dy, inner * 0.5);
-      ctx.font = '700 26px sans-serif';
-      ctx.fillStyle = '#f7f1e8';
-      ctx.textAlign = 'right';
-      ctx.textBaseline = 'middle';
-      ctx.fillText(detailDailyValue, Math.round(x + inner), Math.round(dy - 1));
-      paintBar(x, dy + 34, inner, 12, fillRatio(daily && daily.current, daily && daily.max), info.accent);
-      if (reward != null) drawText('700 22px sans-serif', rewardColor(reward), 'left', 'middle', reward, x, dy + 66, inner);
-    }
+      if (reward != null) drawText('600 17px sans-serif', reward === '奖励未领' ? '#9a542d' : theme.ink, 'left', 'middle', reward, leftX + 14, dailyY + 72, leftW - 28);
+      ctx.restore();
 
-    function paintList(info, game, y, w, h) {
-      var x = SAFE_L + w + 16;
-      round(x, y, CARD_R - x, h, 16);
-      ctx.fillStyle = '#1c1916';
-      ctx.fill();
-      var pad = 18;
-      var ix = x + pad;
-      var inner = CARD_R - x - pad * 2;
-      var compact = h < 360;
-      var rowH = compact ? 42 : 48;
-      var firstRow = y + (compact ? 74 : 80);
-      var maxRows = Math.max(1, Math.floor((y + h - 14 - firstRow) / rowH));
-      var listFont = compact ? '600 20px sans-serif' : '600 24px sans-serif';
-      var valueFont = compact ? '600 20px sans-serif' : '600 24px sans-serif';
-      drawText('700 26px sans-serif', info.accent, 'left', 'middle', '今日一览', ix, y + (compact ? 32 : 36), inner);
-      var rows = game && Array.isArray(game.list) ? game.list.slice(0, maxRows) : [];
-      if (!rows.length) {
-        drawText(listFont, '#b7ab9e', 'left', 'middle', '—', ix, firstRow, inner);
-        return;
-      }
-      var i;
-      for (i = 0; i < rows.length; i++) {
-        var row = rows[i] || {};
-        var ry = firstRow + i * rowH;
-        var label = row.label == null || row.label === '' ? '—' : String(row.label);
+      var panelX = SAFE_L + panelW + 16;
+      var panelRightW = SAFE_R - panelX;
+      round(panelX, top, panelRightW, h, 25);
+      ctx.fillStyle = theme.paper; ctx.fill();
+      var rightX = panelX + 18;
+      var rightW = panelRightW - 36;
+      drawText('700 24px sans-serif', theme.ink, 'left', 'middle', '今日一览', rightX, top + 33, rightW);
+      var rows = game && Array.isArray(game.list) ? game.list.slice(0, 6) : [];
+      var rowH = (h - 74) / 6;
+      if (!rows.length) drawText('500 22px sans-serif', '#69746b', 'center', 'middle', '暂无其他便笺', rightX + rightW / 2, top + h / 2, rightW);
+      for (var ri = 0; ri < rows.length; ri++) {
+        var row = rows[ri] || {};
+        var ry = top + 59 + ri * rowH;
         var value = displayScalar(row.value);
-        var vFont = valueFont;
-        ctx.font = vFont;
-        if (ctx.measureText(value).width > inner * 0.42) vFont = compact ? '600 16px sans-serif' : '600 18px sans-serif';
-        ctx.font = vFont;
-        var valueW = Math.min(inner * 0.5, ctx.measureText(value).width + 4);
-        var labelW = inner - valueW - 10;
-        drawText(listFont, '#d9cec0', 'left', 'middle', label, ix, ry, labelW);
-        drawText(vFont, row.highlight ? info.accent : '#f7f1e8', 'right', 'middle', value, ix + inner, ry, valueW);
-        if (i < rows.length - 1) {
-          ctx.fillStyle = 'rgba(255,244,230,0.06)';
-          ctx.fillRect(ix, ry + Math.round(rowH / 2) + 2, inner, 1);
+        var valueFont = '700 24px sans-serif';
+        ctx.font = valueFont;
+        var valueW = ctx.measureText(value).width;
+        var label = displayScalar(row.label);
+        ctx.font = '600 22px sans-serif';
+        var labelW = ctx.measureText(label).width;
+        if (labelW + valueW + 12 > rightW) {
+          valueFont = '700 22px sans-serif';
+          ctx.font = valueFont;
+          valueW = ctx.measureText(value).width;
+        }
+        var stacked = labelW + valueW + 12 > rightW;
+        if (stacked) {
+          drawText('600 20px sans-serif', '#5f6e61', 'left', 'middle', label, rightX, ry + rowH * 0.24, rightW);
+          drawText('700 22px sans-serif', row.highlight ? theme.ink : '#28342f', 'right', 'middle', value, rightX + rightW, ry + rowH * 0.73, rightW);
+        } else {
+          drawText('600 22px sans-serif', '#5f6e61', 'left', 'middle', label, rightX, ry + rowH / 2, rightW - valueW - 12);
+          drawText(valueFont, row.highlight ? theme.ink : '#28342f', 'right', 'middle', value, rightX + rightW, ry + rowH / 2, valueW + 2);
+        }
+        if (ri < rows.length - 1) {
+          ctx.fillStyle = '#dadccf'; ctx.fillRect(rightX, ry + rowH, rightW, 1);
         }
       }
     }
@@ -680,9 +687,7 @@
       paintDetailChrome(info, game);
       var top = scrollTopFor(game);
       var h = SCROLL_BOTTOM - top;
-      var w = Math.round((CARD_R - SAFE_L - 16) * 0.44);
-      paintDetailPrimary(info, game, top, w, h);
-      paintList(info, game, top, w, h);
+      paintWidgetDetail(info, game, top, h);
     }
 
     function paintSpinner(x, y) {
@@ -707,9 +712,13 @@
       if (fault && pull <= 0 && !refreshing) hintColor = '#f0b27a';
       if (pull >= PULL || refreshing) hintColor = '#f7f1e8';
       var hintX = SAFE_L + titleW + 18;
-      var hintMax = SAFE_R - hintX - (refreshing ? 28 : 12);
+      var hintMax = SAFE_R - hintX - (refreshing ? 72 : 12);
       drawText('600 16px sans-serif', hintColor, 'left', 'middle', hint, hintX, 40, hintMax);
-      if (refreshing) paintSpinner(SAFE_R - 12, 40);
+      if (refreshing) {
+        // Keep the spinner beside the refresh label, clear of the screen's rounded corner.
+        var spinnerX = hintX + ctx.measureText(fitText(hint, hintMax)).width + 22;
+        paintSpinner(spinnerX, 40);
+      }
       if (pull > 0) {
         ctx.fillStyle = page > 0 ? GAMES[page - 1].accent : '#f3eadf';
         ctx.fillRect(SAFE_L, 62, (SAFE_R - SAFE_L) * Math.min(1, pull / PULL), 3);
@@ -1095,6 +1104,9 @@
         }
       }
       bound.length = 0;
+      homeImageLoaders.forEach(function (img) { img.onload = null; img.onerror = null; });
+      homeImageLoaders.length = 0;
+      homeImages = {};
       activeId = null;
       startX = null;
       if (canvas.__hoyoCardControllerDestroy === destroy) {
@@ -1114,6 +1126,7 @@
     canvas.__hoyoCardControllerDestroy = destroy;
     armRecoveryTimer();
     requestDraw();
+    loadHomeImages();
 
     return {
       setSnapshot: setSnapshot,

@@ -1,8 +1,8 @@
-# 上游移植对照
+# 协议与来源说明
 
 来源：[The Latte Helper / PizzaHelperUnited](https://github.com/pizza-studio/PizzaHelperUnited)，固定版本 `29a063c4d906d9f02954ddf1f422e9a4d087aa59`，AGPL-3.0-or-later。
 
-这是 **Swift → JavaScript 协议移植**，不是调用已安装的拿铁 App，也不是把旧网页 Cookie Demo 换皮。国服米游社扫码调用链如下；不声称移植了拿铁的全部功能或其他登录方式。
+国服扫码认证、设备指纹和便笺查询采用该固定版本的协议定义，JavaScript 实现位于 `lib/hoyo.mjs` 和 `lib/service.mjs`。
 
 ## 1. 扫码与 Cookie
 
@@ -27,7 +27,7 @@
 - POST `https://public-data-api.mihoyo.com/device-fp/api/getFp`；MD5(profile device ID + refreshDate)；16 位十六进制 seed；秒时间戳加 `000`；platform=1；app_name 为游戏国服 game_biz；完整保留上游 iPhone ext_fields，**没有改成浏览器指纹或空值**。本地初始随机 fp 同样从二次 MD5 字符打乱取 13 位；使用服务端返回的 device_fp 发起便笺请求。
 - 二维码的任务 UUID 与账户/profile device ID 是两回事，上游也是如此。本地没有 Apple identifierForVendor，首次生成并持久保存一个大写 UUID 作为 profile device ID；不会读取真实硬件序列号。
 - [CreateProfileSheetView.swift](https://github.com/pizza-studio/PizzaHelperUnited/blob/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZHelper/Sources/PZHelper/PZH_Frontends/PZH_Features/ProfileManager/ProfileMgr_SubViews/CreateProfileSheetView.swift#L177-L197)：每个首次发现的角色再申请对应游戏区域的 FP，与登录时 FP 分开保存。
-- [URLRequestConfig.swift](https://github.com/pizza-studio/PizzaHelperUnited/blob/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZKit/Sources/PZAccountKit/HoYoAPIs/Common/HoYo_URLReq/URLRequestConfig.swift) / [URLRequestHelper.swift](https://github.com/pizza-studio/PizzaHelperUnited/blob/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZKit/Sources/PZAccountKit/HoYoAPIs/Common/HoYo_URLReq/URLRequestHelper.swift)：CN X4 salt、2.40.1 / client 5、原 headers；DS2 `salt&t&r&b&q`，query 顺序与实际 URL 相同，不沿用旧 Demo 的 H5 DS1。
+- [URLRequestConfig.swift](https://github.com/pizza-studio/PizzaHelperUnited/blob/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZKit/Sources/PZAccountKit/HoYoAPIs/Common/HoYo_URLReq/URLRequestConfig.swift) / [URLRequestHelper.swift](https://github.com/pizza-studio/PizzaHelperUnited/blob/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZKit/Sources/PZAccountKit/HoYoAPIs/Common/HoYo_URLReq/URLRequestHelper.swift)：CN X4 salt、2.40.1 / client 5、原 headers；DS2 `salt&t&r&b&q`，query 顺序与实际 URL 相同，使用 DS2 签名。
 
 ## 3. 角色与便笺
 
@@ -44,15 +44,20 @@
 - full → widget 是**上游原有分支**，没有增加第三条回退路线。保留两个请求的真实错误及实际数据来源。
 - HSR widget、ZZZ full/widget 的 UA 按上游覆盖为 `WidgetExtension/434 CFNetwork/1492.0.1 Darwin/23.3.0`。
 - 每次带保存的 profile device_id 和 device_fp；不遇错便重新生成设备身份。
-- **widget 不发送 UID/server**，其结果跟随官方组件默认角色；多角色账户不可把该结果当作已强制查询所选 UID。原型直接标出这一限制，不擅自补一个上游不存在的选角接口。
+- **widget 不发送 UID/server**，其结果跟随官方组件默认角色；多角色账户不可把该结果当作已强制查询所选 UID。设置页显示实际来源；卡片隐藏 widget 来源的昵称和 UID，不显示默认角色提示。
 - 活跃度与是否领取奖励分开；缺少领取字段不推断“已领取”。
 
-## 4. 明确的平台适配，不冒充逐字复制
+## 4. 运行平台
 
-- SwiftUI → 普通网页；Alamofire/URLSession → Node fetch；CoreImage QR → 本地 qrcode；CryptoKit MD5 → Node crypto。
-- SwiftData/UserDefaults → 仓库私有 `.local/state.json`（目录 0700 / 文件 0600，**明文**；不上传、Git 忽略）。保留 Token、设备身份、FP、角色、配置和查询结果，进程重启不强迫重新扫码。
-- 单个本地账户，暂不做拿铁完整多账号资料管理、国际服登录、短信/密码登录、签到、Geetest UI 或战斗详情。
-- 完成确认后的中间结果可落盘并手动继续，某游戏角色失败不会伪装成无角色，也不妨碍另两款展示真实状态。这是原型状态管理适配，不是降低认证级别。
-- 上游正常轮询间隔 3 秒、最小间隔 1 秒；本地也按此调度。没有移植 iOS 后台 session 唤醒及 Alamofire 专属网络重试；本地明确显示网络错误，支持原二维码手动检查/继续，不切换登录协议。
-- 便笺响应保留原始 JSON 与前端需要的轻量摘要，不移植拿铁全部 Swift Codable 业务模型或 UI。
-- 桥 API 2 适配已独立实现：相同核心用 bridge.net / storage，MD5 使用可在 WebView 打包的 @noble/hashes，随机源用 Web Crypto；不需要在 Android 里运行 Node。桥原生文本网络的内容协商使用 identity，认证头不变。细节见 [BRIDGE.md](BRIDGE.md)。当前还不是包含卡片绘制的可安装模块；现有 Android 仓库未改动。
+- 设置页使用普通 HTML/CSS/JavaScript；卡片使用 Canvas 2D 和 pointer 事件。
+- 本地开发通过 Node fetch 请求官方接口，将明文账号、角色和便笺保存到 `.local/state.json`。该目录被 Git 忽略，POSIX 权限参数不替代 Windows ACL 或额外加密。
+- 安装模块通过 `bridge.net`、`bridge.storage` 和 `bridge.card` 运行；MD5 使用 `@noble/hashes`，二维码使用内置 `qrcode`。模块无需 Node 或本地服务，具体契约见 [BRIDGE.md](BRIDGE.md)。
+- 扫码确认后的中间结果持久化保存，可手动继续认证。角色查询结果和每游戏错误分别处理。
+- 二维码正常轮询间隔为 3 秒、最小间隔为 1 秒；网络错误按实际结果显示，可手动检查原二维码或继续认证。
+- 支持单账号国服扫码与三游戏便笺，不包含国际服、短信/密码登录、自动签到、验证码求解或完整战斗面板。
+
+## 5. 游戏图片
+
+三个体力 PNG 来自同一固定上游版本的 `PZAccountKit/Resources/Assets.xcassets/DailyNoteIcons`。原图与来源记录位于 [card/assets](card/assets/sources.json)，离线素材脚本由 `scripts/build-home-assets.mjs` 生成。
+
+游戏图片版权归 miHoYo / HoYoverse，不属于本项目 AGPL 源码授权范围。模块作者为 finall1008，上游版权与第三方依赖许可见 [NOTICE](NOTICE)。

@@ -1,0 +1,10 @@
+{
+  "upstream": "https://github.com/pizza-studio/PizzaHelperUnited",
+  "revision": "29a063c4d906d9f02954ddf1f422e9a4d087aa59",
+  "copyright": "Game artwork: miHoYo / HoYoverse. Not licensed under AGPL by this project.",
+  "files": {
+    "gi_note_resin.png": "https://raw.githubusercontent.com/pizza-studio/PizzaHelperUnited/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZKit/Sources/PZAccountKit/Resources/Assets.xcassets/DailyNoteIcons/gi_note_resin.imageset/gi_note_resin.png",
+    "hsr_note_trailblazePower.png": "https://raw.githubusercontent.com/pizza-studio/PizzaHelperUnited/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZKit/Sources/PZAccountKit/Resources/Assets.xcassets/DailyNoteIcons/hsr_note_trailblazePower.imageset/hsr_note_trailblazePower.png",
+    "zzz_note_battery.png": "https://raw.githubusercontent.com/pizza-studio/PizzaHelperUnited/29a063c4d906d9f02954ddf1f422e9a4d087aa59/Packages/PZKit/Sources/PZAccountKit/Resources/Assets.xcassets/DailyNoteIcons/zzz_note_battery.imageset/zzz_note_battery.png"
+  }
+}

@@ -217,7 +217,8 @@ test('FileStore round-trips only inside a checked temporary directory', () => {
     service.db.fpRefreshDate = 1700000000;
     service.save();
     assert.equal(existsSync(`${file}.tmp`), false);
-    assert.equal(statSync(file).mode & 0o777, 0o600);
+    // Windows uses ACLs rather than POSIX owner-only mode bits.
+    if (process.platform !== 'win32') assert.equal(statSync(file).mode & 0o777, 0o600);
     assert.equal(readFileSync(file, 'utf8').endsWith('\n'), true);
     const again = new FileStore(file);
     assert.equal(again.load().deviceID, deviceID);
