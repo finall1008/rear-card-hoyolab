@@ -572,7 +572,7 @@ function clearActionError() {
 
 function showActionError(error, action, extra) {
   actionError = normalizeError(error);
-  lastRetry = { action, extra };
+  lastRetry = action ? { action, extra } : null;
   renderActionError();
 }
 
@@ -606,6 +606,7 @@ function retryLast() {
   else if (job.action === 'complete') completeAuth();
   else if (job.action === 'roles') loadRoles();
   else if (job.action === 'settings') saveSettings();
+  else if (job.action === 'background' && job.extra && job.extra.value) saveBackground(job.extra.page, job.extra.mode, job.extra.value);
   else if (job.action === 'remove') removeAccount();
 }
 
@@ -925,11 +926,259 @@ function render() {
   renderQr();
   renderRoles();
   renderNotes();
+  renderBackgrounds();
   renderEvents();
   renderActionError();
   document.body.setAttribute('aria-busy', busy.size ? 'true' : 'false');
   armPollTimer();
   ensureStateLoop();
+}
+
+
+const BACKGROUND_ITEMS = [
+  { id: 'home', name: '首页', hint: '默认：三张角色图随机' },
+  { id: 'genshin', name: '原神', hint: '默认：原神角色图' },
+  { id: 'hsr', name: '星穹铁道', hint: '默认：星穹铁道角色图' },
+  { id: 'zzz', name: '绝区零', hint: '默认：绝区零角色图' },
+];
+const BACKGROUND_DEFAULT_MODES = { home: 'default', genshin: 'default', hsr: 'default', zzz: 'default' };
+const MAX_BACKGROUND_SHARP = 180 * 1024;
+const MAX_BACKGROUND_BLUR = 30 * 1024;
+const backgroundCache = {};
+const backgroundLoading = new Set();
+const backgroundBusy = new Set();
+
+function backgroundModes() {
+  const saved = model.settings && model.settings.backgrounds;
+  return { ...BACKGROUND_DEFAULT_MODES, ...(saved && typeof saved === 'object' ? saved : {}) };
+}
+
+function backgroundRow(page) {
+  return document.querySelector(`[data-bg-row="${page}"]`);
+}
+
+function renderBackgrounds() {
+  const grid = $('background-grid');
+  if (!grid) return;
+  if (grid.querySelector('.placeholder')) clear(grid);
+  if (!grid.children.length) {
+    for (const item of BACKGROUND_ITEMS) {
+      const row = el('div', 'background-row');
+      row.setAttribute('data-bg-row', item.id);
+      const copy = el('div', 'bg-copy');
+      copy.append(el('strong', null, item.name), el('span', 'fine', item.hint));
+      const actions = el('div', 'bg-actions');
+      const thumb = document.createElement('img');
+      thumb.className = 'bg-thumb';
+      thumb.alt = `${item.name}自定义背景`;
+      thumb.hidden = true;
+      thumb.setAttribute('data-bg-thumb', item.id);
+      const upload = el('button', 'btn bg-upload', '更换图片');
+      upload.type = 'button';
+      upload.setAttribute('data-bg-upload', item.id);
+      upload.hidden = true;
+      const select = document.createElement('select');
+      select.className = 'bg-mode';
+      select.setAttribute('data-bg-page', item.id);
+      select.setAttribute('aria-label', `${item.name}背景`);
+      select.append(new Option('默认', 'default'), new Option('自定义', 'custom'));
+      const file = document.createElement('input');
+      file.type = 'file';
+      file.className = 'bg-file';
+      file.hidden = true;
+      file.accept = 'image/jpeg,image/png,image/webp';
+      file.setAttribute('data-bg-file', item.id);
+      actions.append(thumb, upload, select, file);
+      row.append(copy, actions);
+      grid.append(row);
+    }
+  }
+  const modes = backgroundModes();
+  for (const item of BACKGROUND_ITEMS) {
+    const row = backgroundRow(item.id);
+    if (!row) continue;
+    const mode = modes[item.id] === 'custom' ? 'custom' : 'default';
+    const select = row.querySelector('select');
+    const thumb = row.querySelector('img');
+    const upload = row.querySelector('button[data-bg-upload]');
+    const hint = row.querySelector('.bg-copy .fine');
+    const cached = backgroundCache[item.id];
+    if (hint) hint.textContent = mode === 'custom' ? '当前：自定义背景' : item.hint;
+    if (document.activeElement !== select) select.value = mode;
+    select.disabled = backgroundBusy.has(item.id);
+    upload.disabled = backgroundBusy.has(item.id);
+    const showCustom = mode === 'custom' && cached && cached.custom;
+    thumb.hidden = !showCustom;
+    if (showCustom && thumb.src !== cached.custom) thumb.src = cached.custom;
+    upload.hidden = mode !== 'custom';
+    if (mode === 'custom' && !cached && !backgroundLoading.has(item.id)) loadBackgroundInfo(item.id);
+  }
+}
+
+async function loadBackgroundInfo(page) {
+  backgroundLoading.add(page);
+  try {
+    const payload = await fetchJson('GET', `/api/background/${page}`, undefined, 15000);
+    if (payload && payload.value) backgroundCache[page] = payload.value;
+  } catch (_) { /* missing custom image is not fatal */ }
+  finally {
+    backgroundLoading.delete(page);
+    renderBackgrounds();
+  }
+}
+
+let canvasFilterSupport = null;
+function canFilterCanvas() {
+  if (canvasFilterSupport !== null) return canvasFilterSupport;
+  try {
+    const test = document.createElement('canvas');
+    const ctx = test.getContext('2d');
+    ctx.filter = 'blur(1px)';
+    canvasFilterSupport = ctx.filter === 'blur(1px)';
+  } catch (_) { canvasFilterSupport = false; }
+  return canvasFilterSupport;
+}
+
+function backgroundBlur(canvas, outW, outH) {
+  const blur = document.createElement('canvas');
+  blur.width = outW;
+  blur.height = outH;
+  const bctx = blur.getContext('2d');
+  if (!bctx) throw new Error('浏览器不支持图片压缩。');
+  if (canFilterCanvas()) {
+    bctx.filter = 'blur(16px) saturate(1.2)';
+    bctx.drawImage(canvas, 0, 0);
+    bctx.filter = 'none';
+  } else {
+    const small = document.createElement('canvas');
+    small.width = Math.max(1, Math.round(outW / 10));
+    small.height = Math.max(1, Math.round(outH / 10));
+    const sctx = small.getContext('2d');
+    if (!sctx) throw new Error('浏览器不支持图片压缩。');
+    sctx.drawImage(canvas, 0, 0, small.width, small.height);
+    bctx.drawImage(small, 0, 0, outW, outH);
+  }
+  let quality = 0.62;
+  let url = blur.toDataURL('image/jpeg', quality);
+  while (url.length > MAX_BACKGROUND_BLUR && quality > 0.4) {
+    quality -= 0.06;
+    url = blur.toDataURL('image/jpeg', quality);
+  }
+  return url;
+}
+
+function prepareBackgroundFile(file) {
+  return new Promise((resolve, reject) => {
+    if (!file || !/^image\//.test(file.type || '')) { reject(new Error('请选择图片文件。')); return; }
+    if (file.size > 25 * 1024 * 1024) { reject(new Error('图片超过 25MB，请换一张。')); return; }
+    const image = new Image();
+    image.onload = () => {
+      try {
+        const aspect = 912 / 596;
+        const iw = image.naturalWidth || image.width;
+        const ih = image.naturalHeight || image.height;
+        if (!iw || !ih) throw new Error('无法读取图片尺寸。');
+        let cropW;
+        let cropH;
+        if (iw / ih > aspect) { cropH = ih; cropW = ih * aspect; }
+        else { cropW = iw; cropH = iw / aspect; }
+        const scale = Math.min(1, 912 / cropW, 596 / cropH);
+        const outW = Math.max(1, Math.round(cropW * scale));
+        const outH = Math.max(1, Math.round(cropH * scale));
+        const canvas = document.createElement('canvas');
+        canvas.width = outW;
+        canvas.height = outH;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('浏览器不支持图片压缩。');
+        ctx.fillStyle = '#0b1018';
+        ctx.fillRect(0, 0, outW, outH);
+        ctx.drawImage(image, (iw - cropW) / 2, (ih - cropH) / 2, cropW, cropH, 0, 0, outW, outH);
+        let quality = 0.82;
+        let custom = canvas.toDataURL('image/jpeg', quality);
+        while (custom.length > MAX_BACKGROUND_SHARP && quality > 0.4) {
+          quality -= 0.08;
+          custom = canvas.toDataURL('image/jpeg', quality);
+        }
+        if (custom.length > MAX_BACKGROUND_SHARP) throw new Error('图片压缩后仍然过大，请换一张。');
+        const customBlur = backgroundBlur(canvas, outW, outH);
+        if (!customBlur || customBlur.length > MAX_BACKGROUND_BLUR) throw new Error('模糊背板生成失败。');
+        resolve({ custom, customBlur, width: outW, height: outH });
+      } catch (error) { reject(error); }
+    };
+    image.onerror = () => reject(new Error('图片无法解码，请换一张。'));
+    const reader = new FileReader();
+    reader.onload = () => { image.src = String(reader.result); };
+    reader.onerror = () => reject(new Error('图片无法读取。'));
+    reader.readAsDataURL(file);
+  });
+}
+
+async function saveBackground(page, mode, value) {
+  if (backgroundBusy.has(page)) return;
+  backgroundBusy.add(page);
+  renderBackgrounds();
+  setLive(mode === 'custom' ? '正在保存自定义背景…' : '正在恢复默认背景…');
+  try {
+    const body = { page, mode, ...(value || {}) };
+    await post('/api/background', body, 30000);
+    if (mode === 'custom' && value) backgroundCache[page] = value;
+    else delete backgroundCache[page];
+    setLive('背景已保存。');
+    if (typeof bridge !== 'undefined' && bridge.card && typeof bridge.card.requestRefresh === 'function') {
+      try { bridge.card.requestRefresh(); } catch (_) { /* repaint is best-effort */ }
+    }
+  } catch (error) {
+    showActionError(error, 'background', { page, mode, value: mode === 'custom' ? value : null });
+    setLive('背景保存未完成。');
+  } finally {
+    backgroundBusy.delete(page);
+    renderBackgrounds();
+  }
+}
+
+async function onBackgroundChange(event) {
+  const target = event.target;
+  if (!target) return;
+  if (target.matches('select[data-bg-page]')) {
+    const page = target.getAttribute('data-bg-page');
+    if (target.value === 'default') {
+      await saveBackground(page, 'default');
+      return;
+    }
+    const current = backgroundModes()[page] === 'custom' ? 'custom' : 'default';
+    target.value = current;
+    const file = backgroundRow(page) && backgroundRow(page).querySelector('input[data-bg-file]');
+    if (file) file.click();
+    return;
+  }
+  if (target.matches('input[data-bg-file]')) {
+    const page = target.getAttribute('data-bg-file');
+    const file = target.files && target.files[0];
+    target.value = '';
+    if (!file || backgroundBusy.has(page)) return;
+    backgroundBusy.add(page);
+    renderBackgrounds();
+    setLive('正在按 912×596 裁切并生成模糊层…');
+    try {
+      const value = await prepareBackgroundFile(file);
+      backgroundBusy.delete(page);
+      await saveBackground(page, 'custom', value);
+    } catch (error) {
+      showActionError(error, 'background');
+      setLive('自定义背景未保存。');
+    } finally {
+      backgroundBusy.delete(page);
+      renderBackgrounds();
+    }
+  }
+}
+
+function onBackgroundClick(event) {
+  const button = event.target && event.target.closest ? event.target.closest('button[data-bg-upload]') : null;
+  if (!button) return;
+  const row = button.closest('[data-bg-row]');
+  const file = row && row.querySelector('input[data-bg-file]');
+  if (file) file.click();
 }
 
 function onRoleChange(event) {
@@ -969,6 +1218,11 @@ function bind() {
     renderSettingsMeta();
   });
   $('role-grid').addEventListener('change', onRoleChange);
+  const backgroundGrid = $('background-grid');
+  if (backgroundGrid) {
+    backgroundGrid.addEventListener('change', onBackgroundChange);
+    backgroundGrid.addEventListener('click', onBackgroundClick);
+  }
   $('note-grid').addEventListener('click', onNoteClick);
   $('action-retry').addEventListener('click', retryLast);
   $('modal-cancel').addEventListener('click', () => closeConfirm(false));

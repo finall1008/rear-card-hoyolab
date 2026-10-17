@@ -128,6 +128,8 @@ test('buildBridge writes an offline bridge copy without touching the desktop pro
   assert.match(html, /id="interval"[^>]*disabled>/);
   assert.match(html, new RegExp(SCHEDULER_NOTE));
   assert.match(html, /保存选择</);
+  assert.match(html, /id="background-grid"/);
+  assert.match(app, /\/api\/background/);
   assert.doesNotMatch(html, /保存选择与间隔|本机服务|本地服务/);
   assert.match(html, /id="note-grid"/);
 

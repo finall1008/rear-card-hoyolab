@@ -13,6 +13,8 @@ import { bridgeCardProvider } from './card-provider.mjs';
 (function () {
   'use strict';
 
+  var BACKGROUND_PAGES = ['home', 'genshin', 'hsr', 'zzz'];
+
   function fail(message) {
     if (typeof bridge !== 'undefined' && bridge.log) {
       try { bridge.log.error(message); return; } catch (_) { /* fallthrough */ }
@@ -45,12 +47,36 @@ import { bridgeCardProvider } from './card-provider.mjs';
       return;
     }
     var provider = bridgeCardProvider(bridge);
+    function readBackgrounds() {
+      return Promise.all(BACKGROUND_PAGES.map(function (page) {
+        return bridge.storage.get('hoyolab.background.' + page);
+      })).then(function (values) {
+        var map = {};
+        BACKGROUND_PAGES.forEach(function (page, index) {
+          if (values[index]) map[page] = values[index];
+        });
+        return map;
+      });
+    }
+    function refreshBackgrounds() {
+      return readBackgrounds().then(function (map) {
+        controller.setBackgrounds(map);
+      }).catch(function (error) {
+        fail('背景读取失败: ' + error);
+      });
+    }
     var controller = globalThis.HoyoCard.mount({
       canvas: canvas,
       initialSnapshot: provider.initialSnapshot,
-      refresh: provider.refresh,
+      refresh: function (scope) {
+        return provider.refresh(scope).then(function (snapshot) {
+          refreshBackgrounds();
+          return snapshot;
+        });
+      },
       onStatus: function () {},
     });
+    refreshBackgrounds();
     // 前台刷新或后台任务写入共享快照后，载体把 snapshotRev 同步进 localStorage；
     // 下一次 requestRefresh/刷新广播时重读即可。这里同时挂 onRefresh 兜底。
     if (typeof bridge.card.onRefresh === 'function') {
@@ -58,6 +84,7 @@ import { bridgeCardProvider } from './card-provider.mjs';
         try {
           var next = bridge.card.readSnapshot();
           if (next) controller.setSnapshot(next);
+          refreshBackgrounds();
         } catch (error) {
           fail('快照重读失败: ' + error);
         }

@@ -11,7 +11,7 @@ function fixture() {
   const data = new Map(); const calls = []; const snapshots = [];
   let snapshot = null;
   const api = {
-    storage: { get: async key => copy(data.get(key)), set: async (key, value) => { data.set(key, copy(value)); } },
+    storage: { get: async key => copy(data.get(key)), set: async (key, value) => { data.set(key, copy(value)); }, remove: async key => { data.delete(key); } },
     card: { readSnapshot: () => copy(snapshot), saveSnapshot: async value => { snapshot = copy(value); snapshots.push(copy(value)); } },
     net: { request: async request => {
       calls.push(copy(request));
@@ -61,6 +61,22 @@ function assertPublic(value) {
   for (const secret of ['SECRET_STOKEN', 'SECRET_COOKIE', 'SECRET_MID', 'SECRET_FP', 'SECRET_TICKET']) assert.ok(!encoded.includes(secret));
 }
 
+test('bridge stores per-page custom backgrounds outside the card package', async () => {
+  const { api, data } = fixture();
+  const runtime = await login(api);
+  const custom = 'data:image/jpeg;base64,' + 'A'.repeat(2048);
+  const customBlur = 'data:image/jpeg;base64,' + 'B'.repeat(512);
+  await runtime.request('POST', '/api/background', { page: 'home', mode: 'custom', custom, customBlur, width: 912, height: 596 });
+  assert.equal(data.get('hoyolab.background.home').custom, custom);
+  const read = await runtime.request('GET', '/api/background/home');
+  assert.equal(read.value.customBlur, customBlur);
+  const state = await runtime.request('GET', '/api/state');
+  assert.equal(state.settings.backgrounds.home, 'custom');
+  await runtime.request('POST', '/api/background', { page: 'home', mode: 'default' });
+  assert.equal(data.get('hoyolab.background.home'), undefined);
+  const reset = await runtime.request('GET', '/api/state');
+  assert.equal(reset.settings.backgrounds.home, 'default');
+});
 test('bridge transport uses native request with explicit Cookie/DS, not Profile cookies or fetch', async () => {
   const { api, calls } = fixture();
   const transport = bridgeTransport(api);

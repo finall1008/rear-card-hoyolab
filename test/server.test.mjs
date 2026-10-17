@@ -6,19 +6,20 @@ import { execFileSync } from 'node:child_process';
 import http from 'node:http';
 import { createServer } from '../server.mjs';
 import { SettingsService } from '../lib/service.mjs';
+import { MemoryBackgroundStore } from '../lib/backgrounds.mjs';
 
 function fixture() {
   let saved;
   const store = { load: () => saved, save: value => { saved = structuredClone(value); } };
   return new SettingsService(store, { transport: async () => { throw new Error('Network must not be used by HTTP contract tests'); } });
 }
-async function running(t) {
+async function running(t, backgrounds = new MemoryBackgroundStore()) {
   const service = fixture();
-  const server = createServer(service);
+  const server = createServer(service, backgrounds);
   server.listen(0, '127.0.0.1'); await once(server, 'listening');
   t.after(() => new Promise(resolve => server.close(resolve)));
   const origin = `http://127.0.0.1:${server.address().port}`;
-  return { server, service, origin };
+  return { server, service, origin, backgrounds };
 }
 test('serves state without any credentials and with CSRF', async t => {
   const { origin } = await running(t);
@@ -36,6 +37,27 @@ test('rejects foreign origins and CSRF tokens', async t => {
     const response = await fetch(origin + '/api/settings', { method: 'POST', headers, body: '{}' });
     assert.equal(response.status, 403);
   }
+});
+test('per-page backgrounds persist as base64 and reject invalid input', async t => {
+  const backgrounds = new MemoryBackgroundStore();
+  const { origin, service } = await running(t, backgrounds);
+  const { csrf } = await (await fetch(origin + '/api/state')).json();
+  const headers = { Origin: origin, 'X-CSRF-Token': csrf, 'Content-Type': 'application/json' };
+  const custom = 'data:image/jpeg;base64,' + 'A'.repeat(2048);
+  const blur = 'data:image/jpeg;base64,' + 'B'.repeat(512);
+  const saved = await fetch(origin + '/api/background', { method: 'POST', headers, body: JSON.stringify({ page: 'home', mode: 'custom', custom, customBlur: blur, width: 912, height: 596 }) });
+  assert.equal(saved.status, 200);
+  assert.equal(backgrounds.get('home').custom, custom);
+  assert.equal(service.db.settings.backgrounds.home, 'custom');
+  const read = await (await fetch(origin + '/api/background/home')).json();
+  assert.equal(read.value.customBlur, blur);
+  const bad = await fetch(origin + '/api/background', { method: 'POST', headers, body: JSON.stringify({ page: 'home', mode: 'custom', custom: 'https://evil.test/a.jpg', customBlur: blur, width: 912, height: 596 }) });
+  assert.equal(bad.status, 400);
+  assert.equal((await bad.json()).error.code, 'INVALID_IMAGE');
+  const reset = await fetch(origin + '/api/background', { method: 'POST', headers, body: JSON.stringify({ page: 'home', mode: 'default' }) });
+  assert.equal(reset.status, 200);
+  assert.equal(backgrounds.get('home'), null);
+  assert.equal(service.db.settings.backgrounds.home, 'default');
 });
 test('valid settings persist and invalid settings are explicit', async t => {
   const { origin, service } = await running(t);

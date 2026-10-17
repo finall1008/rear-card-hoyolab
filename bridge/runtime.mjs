@@ -4,6 +4,7 @@ import { SettingsService } from '../lib/service.mjs';
 import { initialState } from '../lib/state.mjs';
 import { GAMES, HoyoError, errorJSON } from '../lib/hoyo.mjs';
 import { buildCardSnapshot } from '../lib/card-state.mjs';
+import { backgroundStorageKey, validateBackgroundInput } from '../lib/backgrounds.mjs';
 
 const IDENTITY = 'hoyolab.identity';
 const AUTH = 'hoyolab.auth';
@@ -117,9 +118,20 @@ export async function createBridgeRuntime(bridge, options = {}) {
         await store.readNotes(service.db);
         return view();
       }
+      const backgroundPath = path.match(/^\/api\/background\/(home|genshin|hsr|zzz)$/);
+      if (method === 'GET' && backgroundPath) {
+        return { page: backgroundPath[1], value: await bridge.storage.get(backgroundStorageKey(backgroundPath[1])) };
+      }
       const actions = {
         '/api/auth/qr': () => service.createQR(), '/api/auth/poll': () => service.poll(), '/api/auth/complete': () => service.complete(),
         '/api/account/roles': () => service.loadRoles(), '/api/settings': () => service.settings({ selectedRoles: body.selectedRoles }),
+        '/api/background': async () => {
+          const validated = validateBackgroundInput(body);
+          const key = backgroundStorageKey(validated.page);
+          if (validated.mode === 'default') await bridge.storage.remove(key);
+          else await bridge.storage.set(key, validated.value);
+          service.settings({ backgrounds: { [validated.page]: validated.mode } });
+        },
         '/api/notes/refresh': () => service.refresh(body.game), '/api/account/remove': () => service.remove(),
       };
       if (method !== 'POST' || !actions[path]) throw new HoyoError('bridge', 'NOT_FOUND', '未知模块操作。');

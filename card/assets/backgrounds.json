@@ -1,0 +1,11 @@
+{
+  "note": "User-provided character backgrounds, center-cropped to 912x596 without letterboxing. The -blur.jpg files are the same crops blurred (radius 16) and slightly saturated for the card's glass backdrop. Game artwork copyright miHoYo / HoYoverse; not licensed under AGPL by this project.",
+  "files": {
+    "bg-zzz.jpg": "绝区零角色背景（用户提供原图，直接裁切）",
+    "bg-genshin.jpg": "原神角色背景（用户提供原图，直接裁切）",
+    "bg-hsr.jpg": "星穹铁道角色背景（用户提供原图，直接裁切）",
+    "bg-zzz-blur.jpg": "绝区零模糊背板",
+    "bg-genshin-blur.jpg": "原神模糊背板",
+    "bg-hsr-blur.jpg": "星穹铁道模糊背板"
+  }
+}

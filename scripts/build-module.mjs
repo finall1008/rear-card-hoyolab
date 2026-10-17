@@ -13,8 +13,8 @@ const bridgeDist = path.join(root, 'dist', 'bridge');
 export const MODULE_MANIFEST = {
   id: 'dev.finall.hoyolab',
   name: '米游社',
-  version: '0.1.3',
-  versionCode: 4,
+  version: '0.1.4',
+  versionCode: 5,
   apiVersion: 2,
   description: '米游社每日委托与体力卡片：首页三游戏并列，详情页左右两栏，支持下拉刷新与后台定时更新。',
   author: 'finall1008',
@@ -47,6 +47,11 @@ async function main() {
   if (!file) throw new Error('card main 打包无输出');
   writeFileSync(path.join(outDir, 'card', 'main.js'), file.contents);
   writeFileSync(path.join(outDir, 'card', 'index.html'), CARD_INDEX_HTML);
+  // 角色背景是运行时通过 Image(src) 读取的静态文件；图标已由 home-assets.js 内嵌。
+  mkdirSync(path.join(outDir, 'card', 'assets'), { recursive: true });
+  for (const name of ['bg-genshin.jpg', 'bg-hsr.jpg', 'bg-zzz.jpg', 'bg-genshin-blur.jpg', 'bg-hsr-blur.jpg', 'bg-zzz-blur.jpg']) {
+    copyFileSync(path.join(root, 'card', 'assets', name), path.join(outDir, 'card', 'assets', name));
+  }
   writeFileSync(path.join(outDir, 'module.json'), JSON.stringify(MODULE_MANIFEST, null, 2) + '\n');
 
   // 设置页与后台刷新入口：直接复用 dist/bridge 产物（webroot 首脚本须为 bridge-shim.js）。

@@ -8,12 +8,14 @@ import { spawn } from 'node:child_process';
 import { SettingsService } from './lib/service.mjs';
 import { FileStore } from './lib/store.mjs';
 import { HoyoError, errorJSON } from './lib/hoyo.mjs';
+import { MemoryBackgroundStore, MAX_BACKGROUND_BODY, validateBackgroundInput } from './lib/backgrounds.mjs';
+import { FileBackgroundStore } from './lib/background-file.mjs';
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
 const PUBLIC = new Map([['/', ['index.html', 'text/html; charset=utf-8']], ['/app.js', ['app.js', 'text/javascript; charset=utf-8']], ['/style.css', ['style.css', 'text/css; charset=utf-8']]]);
 const SOURCE_FILES = ['package.json', 'package-lock.json', 'server.mjs', 'lib', 'bridge', 'card', 'preview', 'preview-server.mjs', 'CARD.md', 'public', 'scripts', 'test', 'README.md', 'BRIDGE.md', 'UPSTREAM.md', 'LICENSE', 'NOTICE', 'RELEASE.md', 'previews', 'tools/card-build', '.github', '.gitignore'];
 
-export function createServer(service) {
+export function createServer(service, backgrounds = new MemoryBackgroundStore()) {
   const csrf = randomBytes(32).toString('hex');
   let queue = Promise.resolve();
   let autoRefreshing = false;
@@ -33,6 +35,8 @@ export function createServer(service) {
     const path = new URL(req.url, `http://${req.headers.host}`).pathname;
     try {
       if (req.method === 'GET' && path === '/api/state') return json(res, 200, state());
+      const backgroundPath = path.match(/^\/api\/background\/(home|genshin|hsr|zzz)$/);
+      if (req.method === 'GET' && backgroundPath) return json(res, 200, { page: backgroundPath[1], value: backgrounds.get(backgroundPath[1]) });
       if (req.method === 'GET' && PUBLIC.has(path)) {
         const [file, type] = PUBLIC.get(path);
         const body = await readFile(resolve(ROOT, 'public', file));
@@ -53,13 +57,20 @@ export function createServer(service) {
       const token = Buffer.from(req.headers['x-csrf-token'] ?? '');
       if (token.length !== csrf.length || !timingSafeEqual(token, Buffer.from(csrf))) return json(res, 403, { error: { stage: 'http', code: 'CSRF', message: '请刷新设置页后重试。' } });
       let raw = '';
-      for await (const chunk of req) { raw += chunk; if (raw.length > 16384) throw new HoyoError('http', 'TOO_LARGE', '请求过大。'); }
+      const maxBody = path === '/api/background' || path === '/api/settings' ? MAX_BACKGROUND_BODY : 16384;
+      for await (const chunk of req) { raw += chunk; if (raw.length > maxBody) throw new HoyoError('http', 'TOO_LARGE', '请求过大。'); }
       let body;
       try { body = JSON.parse(raw || '{}'); } catch { throw new HoyoError('http', 'INVALID_JSON', '请求不是 JSON。'); }
       if (!body || Array.isArray(body) || typeof body !== 'object') throw new HoyoError('http', 'INVALID_BODY', '请求应为 JSON 对象。');
       const actions = {
         '/api/auth/qr': () => service.createQR(), '/api/auth/poll': () => service.poll(), '/api/auth/complete': () => service.complete(),
         '/api/account/roles': () => service.loadRoles(), '/api/settings': () => service.settings(body),
+        '/api/background': () => {
+          const validated = validateBackgroundInput(body);
+          if (validated.mode === 'default') backgrounds.remove(validated.page);
+          else backgrounds.set(validated.page, validated.value);
+          return service.settings({ backgrounds: { [validated.page]: validated.mode } });
+        },
         '/api/notes/refresh': () => service.refresh(body.game), '/api/account/remove': () => service.remove(),
       };
       if (!actions[path]) return json(res, 404, { error: { stage: 'http', code: 'NOT_FOUND', message: '未找到接口。' } });
@@ -96,8 +107,9 @@ export function createServer(service) {
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const port = Number(process.env.PORT ?? 18766);
   const store = new FileStore(resolve(ROOT, '.local/state.json'));
+  const backgrounds = new FileBackgroundStore(resolve(ROOT, '.local/backgrounds.json'));
   const service = new SettingsService(store);
-  const server = createServer(service);
+  const server = createServer(service, backgrounds);
   server.listen(port, '127.0.0.1', () => console.log(`米游社设置 http://127.0.0.1:${server.address().port}\n认证来源：The Latte Helper @ ${service.view().upstream.commit.slice(0, 8)}\n凭据保存在本仓库 .local/，不输出到网页或终端。`));
   server.on('error', error => { console.error(`启动失败：${error.code}`); process.exitCode = 1; });
 }

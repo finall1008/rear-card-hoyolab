@@ -11,6 +11,7 @@
   var refreshButton = document.getElementById('refresh');
   var scopes = ['all', 'genshin', 'hsr', 'zzz'];
   var names = ['全部', '原神', '星穹铁道', '绝区零'];
+  var BACKGROUND_PAGES = ['home', 'genshin', 'hsr', 'zzz'];
   var card;
   function store(snapshot) {
     // The server has already awaited disk persistence. This is an additional first-frame cache.
@@ -45,21 +46,35 @@
       throw error;
     } finally { busy = false; refreshButton.disabled = false; }
   }
+  async function loadBackgrounds() {
+    var map = {};
+    await Promise.all(BACKGROUND_PAGES.map(async function (page) {
+      try {
+        var response = await fetch('/api/card/background/' + page);
+        if (!response.ok) return;
+        var result = await response.json();
+        if (result.value) map[page] = result.value;
+      } catch (_) { /* keep default background */ }
+    }));
+    if (card) card.setBackgrounds(map);
+  }
   function pageChanged(page) {
     activePage = page;
     document.querySelectorAll('[data-page]').forEach(function (button) { button.setAttribute('aria-pressed', String(Number(button.dataset.page) === page)); });
     refreshButton.textContent = '刷新' + names[page];
   }
   card = HoyoCard.mount({ canvas: document.getElementById('rear'), initialSnapshot: initialSnapshot, refresh: refresh, onPageChange: pageChanged });
+  loadBackgrounds();
   document.querySelectorAll('[data-page]').forEach(function (button) { button.addEventListener('click', function () { card.goTo(Number(button.dataset.page)); }); });
   refreshButton.addEventListener('click', function () {
-    refresh(scopes[activePage]).then(function (snapshot) { card.setSnapshot(snapshot); }).catch(function () {});
+    refresh(scopes[activePage]).then(function (snapshot) { card.setSnapshot(snapshot); return loadBackgrounds(); }).catch(function () {});
   });
   // First RAF must be allowed to publish the cached frame before any awaited host work.
   requestAnimationFrame(function () {
     read().then(function (snapshot) {
       card.setSnapshot(snapshot);
-      status.textContent = '已读取本地快照 · 左右拖动翻页，下拉刷新；详情为官方小组件式两栏。';
+      loadBackgrounds();
+      status.textContent = '已读取本地快照 · 左右拖动翻页，下拉刷新；背景在设置页「卡片外观」修改。';
     }).catch(function (error) { status.textContent = error.message || '本地状态读取失败；保留缓存画面。'; });
   });
   window.addEventListener('pagehide', function () { card.destroy(); });

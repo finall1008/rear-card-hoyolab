@@ -8,6 +8,10 @@
   var DESIGN_H = 596;
   var SAFE_L = 318;
   var SAFE_R = 890;
+  // Header keeps the left edge aligned with the card grid, but stops short of
+  // the top-right rounded corner. Its right edge is intentionally not tied to SAFE_R.
+  var HEADER_W = 520;
+  var HEADER_R = SAFE_L + HEADER_W;
   var COL_GAP = 12;
   var COL_TOP = 76;
   var COL_BOTTOM = 502;
@@ -30,6 +34,15 @@
     { paper: '#e5eaf0', ink: '#395974', soft: '#cddbe7', track: '#cbd3db' },
     { paper: '#e9ebd5', ink: '#535e2a', soft: '#d7ddac', track: '#cfd3b8' }
   ];
+  var CARD_RADIUS = 25;
+  var BG_FADE_MS = 260;
+  // 角色背景按 912×596 直接裁切；blur 版本用于卡片背板的真实模糊。
+  var BG_ASSETS = {
+    genshin: { sharp: 'assets/bg-genshin.jpg', blur: 'assets/bg-genshin-blur.jpg' },
+    hsr: { sharp: 'assets/bg-hsr.jpg', blur: 'assets/bg-hsr-blur.jpg' },
+    zzz: { sharp: 'assets/bg-zzz.jpg', blur: 'assets/bg-zzz-blur.jpg' }
+  };
+  var BACKGROUND_PAGES = ['home', 'genshin', 'hsr', 'zzz'];
 
   // QuickJS 宿主缺省没有 globalThis 与 crypto；这里就地补 polyfill，
   // 保证 lib/platform.mjs（uuid/randomInt）在模块卡片环境可运行。
@@ -141,6 +154,27 @@
     return n;
   }
 
+  function tint(hex, alpha) {
+    var value = String(hex || '#ffffff').replace('#', '');
+    if (value.length === 3) value = value.charAt(0) + value.charAt(0) + value.charAt(1) + value.charAt(1) + value.charAt(2) + value.charAt(2);
+    var n = parseInt(value, 16);
+    if (!isFinite(n)) return 'rgba(255,255,255,' + alpha + ')';
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
+  }
+
+  function easeOut(progress) {
+    var p = clamp(progress, 0, 1);
+    return p * p * (3 - 2 * p);
+  }
+
+  function normalizePageBackground(value) {
+    if (!value || typeof value !== 'object') return null;
+    var custom = typeof value.custom === 'string' && value.custom ? value.custom : null;
+    var customBlur = typeof value.customBlur === 'string' && value.customBlur ? value.customBlur : null;
+    if (!custom) return null;
+    return { custom: custom, customBlur: customBlur };
+  }
+
   function pad2(n) {
     n = Math.floor(Math.abs(n));
     return (n < 10 ? '0' : '') + n;
@@ -227,6 +261,19 @@
     var bound = [];
     var homeImages = {};
     var homeImageLoaders = [];
+    var pageBackgrounds = options.backgrounds || {};
+    var homeGame = GAMES[Math.floor(Math.random() * GAMES.length)].id;
+    var backgrounds = {};
+    var customBackgrounds = {};
+    var backgroundLoaders = [];
+    var fade = null;
+
+    for (var gi = 0; gi < GAMES.length; gi++) {
+      backgrounds[GAMES[gi].id] = loadBackgroundPair(BG_ASSETS[GAMES[gi].id].sharp, BG_ASSETS[GAMES[gi].id].blur);
+    }
+    for (var bp = 0; bp < BACKGROUND_PAGES.length; bp++) {
+      customBackgrounds[BACKGROUND_PAGES[bp]] = loadPageBackground(pageBackgrounds[BACKGROUND_PAGES[bp]]);
+    }
 
     function clock() {
       if (options && typeof options.now === 'function') {
@@ -236,6 +283,67 @@
         } catch (err) {}
       }
       return Date.now();
+    }
+
+    function loadBackgroundImage(src) {
+      var entry = { image: null, loaded: false, failed: true, src: src || null };
+      var ImageType = view.Image || root.Image;
+      if (!src || typeof ImageType !== 'function') return entry;
+      var image = new ImageType();
+      entry.image = image;
+      entry.failed = false;
+      backgroundLoaders.push(image);
+      image.onload = function () {
+        if (stopped) return;
+        entry.loaded = true;
+        entry.failed = false;
+        requestDraw();
+      };
+      image.onerror = function () {
+        if (stopped) return;
+        entry.loaded = false;
+        entry.failed = true;
+        requestDraw();
+      };
+      try { image.src = src; } catch (err) { entry.failed = true; }
+      return entry;
+    }
+
+    function loadBackgroundPair(sharpSrc, blurSrc) {
+      return { sharp: loadBackgroundImage(sharpSrc), blur: loadBackgroundImage(blurSrc) };
+    }
+
+    function loadPageBackground(value) {
+      var normalized = normalizePageBackground(value);
+      if (!normalized) return null;
+      var pair = loadBackgroundPair(normalized.custom, normalized.customBlur);
+      pair.custom = normalized.custom;
+      pair.customBlur = normalized.customBlur;
+      return pair;
+    }
+
+    function backgroundKeyFor(current) {
+      return current === 0 ? 'home' : GAMES[current - 1].id;
+    }
+
+    function backgroundEntry(key) {
+      var custom = customBackgrounds[key];
+      if (custom && custom.sharp && custom.sharp.src) return custom;
+      var defaultKey = key === 'home' ? homeGame : key;
+      return backgrounds[defaultKey] || null;
+    }
+
+    function backgroundLoaded(key) {
+      var entry = backgroundEntry(key);
+      return !!(entry && entry.sharp && entry.sharp.loaded);
+    }
+
+    function startBackgroundFade(fromKey, toKey) {
+      if (!fromKey || fromKey === toKey || !backgroundLoaded(fromKey) || !backgroundLoaded(toKey)) {
+        fade = null;
+        return;
+      }
+      fade = { fromKey: fromKey, toKey: toKey, start: clock() };
     }
 
     function parseTime(value) {
@@ -439,14 +547,22 @@
       return text.length ? text + ellipsis : '';
     }
 
-    function drawText(font, color, align, baseline, value, x, y, maxW) {
+    function drawText(font, color, align, baseline, value, x, y, maxW, outline, outlineWidth) {
       var raw = value == null ? '' : String(value);
       ctx.font = font;
       ctx.fillStyle = color;
       ctx.textAlign = align;
       ctx.textBaseline = baseline;
       var shown = typeof maxW === 'number' ? fitText(raw, maxW) : raw;
-      ctx.fillText(shown, Math.round(x), Math.round(y));
+      var tx = Math.round(x);
+      var ty = Math.round(y);
+      if (outline && typeof ctx.strokeText === 'function') {
+        ctx.lineWidth = outlineWidth || 3;
+        ctx.lineJoin = 'round';
+        ctx.strokeStyle = outline;
+        ctx.strokeText(shown, tx, ty);
+      }
+      ctx.fillText(shown, tx, ty);
     }
 
     function round(x, y, w, h, r) {
@@ -461,6 +577,111 @@
       ctx.arcTo(x, y + h, x, y, radius);
       ctx.arcTo(x, y, x + w, y, radius);
       ctx.closePath();
+    }
+
+    // 顶部标题/详情信息用的轻量浅色玻璃条：只覆盖文字附近，不压暗整张背景。
+    function paintHeaderGlass(x, y, w, h, r) {
+      var layer;
+      for (layer = 2; layer >= 1; layer--) {
+        round(x - layer, y + 3 + layer, w + layer * 2, h + layer * 2, r + layer);
+        ctx.fillStyle = 'rgba(8,12,16,' + (0.05 * layer) + ')';
+        ctx.fill();
+      }
+      var pair = backgroundEntry(backgroundKeyFor(page));
+      var blur = pair && pair.blur && pair.blur.loaded ? pair.blur.image : null;
+      ctx.save();
+      round(x, y, w, h, r);
+      ctx.clip();
+      if (blur && typeof ctx.drawImage === 'function') {
+        ctx.drawImage(blur, 0, 0, DESIGN_W, DESIGN_H);
+      }
+      ctx.fillStyle = 'rgba(248,247,241,0.76)';
+      ctx.fillRect(x, y, w, h);
+      var sheen = ctx.createLinearGradient(x, y, x + w * 0.7, y + h);
+      sheen.addColorStop(0, 'rgba(255,255,255,0.26)');
+      sheen.addColorStop(0.55, 'rgba(255,255,255,0.06)');
+      sheen.addColorStop(1, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sheen;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.60)';
+      ctx.fillRect(x + r * 0.8, y + 1, w - r * 1.6, 1);
+      ctx.restore();
+      round(x + 0.6, y + 0.6, w - 1.2, h - 1.2, Math.max(1, r - 0.6));
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+      ctx.stroke();
+    }
+
+    // 参考 WebTricks 的 liquid-glass CSS：单层模糊背板 + 顶部受光 tint + 1px 边缘
+    // 内高光/底部返光 + 斜向 sheen。Canvas 没有 backdrop-filter，所以用预模糊图；
+    // 不做内圈缩放/位移，避免出现硬边和“同一张卡片里模糊程度不一样”的接缝。
+    function paintGlassPanel(x, y, w, h, radius, theme) {
+      var r = radius == null ? CARD_RADIUS : radius;
+      var layer;
+      for (layer = 2; layer >= 1; layer--) {
+        round(x - layer * 2, y + 4 + layer, w + layer * 4, h + layer * 2, r + layer * 2);
+        ctx.fillStyle = 'rgba(8,12,16,' + (0.05 * layer) + ')';
+        ctx.fill();
+      }
+
+      var key = backgroundKeyFor(page);
+      var pair = backgroundEntry(key);
+      var blur = pair && pair.blur && pair.blur.loaded ? pair.blur.image : null;
+
+      ctx.save();
+      round(x, y, w, h, r);
+      ctx.clip();
+      if (blur && typeof ctx.drawImage === 'function') {
+        ctx.drawImage(blur, 0, 0, DESIGN_W, DESIGN_H);
+      } else {
+        ctx.fillStyle = tint(theme.paper, 0.76);
+        ctx.fillRect(x, y, w, h);
+      }
+
+      // 顶部受光的体色渐变。
+      var body = ctx.createLinearGradient(x, y, x + w, y + h);
+      body.addColorStop(0, tint(theme.paper, 0.62));
+      body.addColorStop(0.52, tint(theme.paper, 0.50));
+      body.addColorStop(1, tint(theme.paper, 0.44));
+      ctx.fillStyle = body;
+      ctx.fillRect(x, y, w, h);
+      ctx.fillStyle = 'rgba(255,255,255,0.07)';
+      ctx.fillRect(x, y, w, h);
+
+      // 斜向 specular sheen。
+      var sheen = ctx.createLinearGradient(x, y, x + w * 0.66, y + h * 0.72);
+      sheen.addColorStop(0, 'rgba(255,255,255,0.30)');
+      sheen.addColorStop(0.30, 'rgba(255,255,255,0.08)');
+      sheen.addColorStop(0.78, 'rgba(255,255,255,0)');
+      ctx.fillStyle = sheen;
+      ctx.fillRect(x, y, w, h);
+
+      // 内底部返光/厚度。
+      var depth = ctx.createLinearGradient(x, y + h * 0.62, x, y + h);
+      depth.addColorStop(0, 'rgba(0,0,0,0)');
+      depth.addColorStop(1, 'rgba(40,52,44,0.06)');
+      ctx.fillStyle = depth;
+      ctx.fillRect(x, y, w, h);
+
+      // 1px 边缘：上亮下暗、两侧介于中间，不形成一条宽带。
+      var rim = ctx.createLinearGradient(x, y, x + w, y + h);
+      rim.addColorStop(0, 'rgba(255,255,255,0.62)');
+      rim.addColorStop(0.35, 'rgba(255,255,255,0.22)');
+      rim.addColorStop(0.7, 'rgba(255,255,255,0.10)');
+      rim.addColorStop(1, 'rgba(255,255,255,0.18)');
+      round(x + 0.75, y + 0.75, w - 1.5, h - 1.5, Math.max(1, r - 0.75));
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = rim;
+      ctx.stroke();
+      // 顶部和底部各一条很轻的 inset 高光/返光。
+      ctx.fillStyle = 'rgba(255,255,255,0.48)';
+      ctx.fillRect(x + r * 0.75, y + 1, w - r * 1.5, 1);
+      ctx.restore();
+
+      round(x + 0.6, y + 0.6, w - 1.2, h - 1.2, Math.max(1, r - 0.6));
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(24,34,28,0.20)';
+      ctx.stroke();
     }
 
     // Images are bundled data URLs: no network and no image-loading gate on the first frame.
@@ -542,13 +763,13 @@
       var inner = rect.w - 32;
       var cx = rect.x + rect.w / 2;
       var top = rect.y;
+      paintGlassPanel(rect.x, top, rect.w, rect.h, CARD_RADIUS, theme);
       ctx.save();
-      round(rect.x, top, rect.w, rect.h, 25);
-      ctx.fillStyle = theme.paper; ctx.fill(); ctx.clip();
+      round(rect.x, top, rect.w, rect.h, CARD_RADIUS); ctx.clip();
       drawText('700 25px sans-serif', theme.ink, 'left', 'middle', info.name, x, top + 31, inner);
       // A soft medallion gives each game's resource its own visual identity.
       ctx.beginPath(); ctx.arc(cx, top + 97, 37, 0, Math.PI * 2);
-      ctx.fillStyle = theme.soft; ctx.fill();
+      ctx.fillStyle = tint(theme.soft, 0.76); ctx.fill();
       paintHomeAsset(info.id + 'Primary', cx - 35, top + 62, 70);
       drawText('600 17px sans-serif', theme.ink, 'center', 'middle', metricLabel(primary, info.primary), cx, top + 151, inner);
       drawText('700 59px sans-serif', '#28342f', 'center', 'middle', displayScalar(primary && primary.current), cx, top + 198, inner);
@@ -558,7 +779,11 @@
       drawText('600 17px sans-serif', errored ? '#9a542d' : theme.ink, 'left', 'middle', banner ? (errored ? (primary && primary.current != null ? '失败 · 旧数据' : '刷新失败') : banner) : recoveryLine(primary), x + 27, top + 291, inner - 27);
       // Daily progress has a separate surface; completion never implies reward collection.
       round(x - 3, top + 318, inner + 6, 70, 14);
-      ctx.fillStyle = theme.soft; ctx.fill();
+      ctx.fillStyle = tint(theme.soft, 0.76); ctx.fill();
+      round(x - 3, top + 318, inner + 6, 70, 14);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.34)';
+      ctx.stroke();
       drawText('600 16px sans-serif', theme.ink, 'center', 'middle', metricLabel(daily, info.daily), cx, top + 341, inner - 8);
       var dailyValue = displayScalar(daily && daily.current) + ' / ' + displayScalar(daily && daily.max);
       drawText('700 23px sans-serif', '#28342f', 'center', 'middle', dailyValue, cx, top + 369, inner - 8);
@@ -582,18 +807,18 @@
       var bits = [];
       var nick = nicknameText(game);
       var uid = uidLine(game);
-      if (!widgetRole(game)) {
+      if (widgetRole(game)) {
+        drawText('600 20px sans-serif', info.accent, 'left', 'middle', '组件默认角色', SAFE_L + 16, 84, 300);
+      } else {
         if (nick) bits.push(nick);
         if (uid) bits.push(uid);
-        drawText('600 20px sans-serif', '#d9cec0', 'left', 'middle', bits.length ? bits.join(' · ') : '—', SAFE_L, 84, 400);
+        drawText('600 20px sans-serif', '#3f4a43', 'left', 'middle', bits.length ? bits.join(' · ') : '—', SAFE_L + 16, 84, 400);
       }
-      drawText('600 20px sans-serif', '#b7ab9e', 'right', 'middle', '更新 ' + formatUpdated(game && game.updatedAt), SAFE_R, 84, 200);
+      drawText('600 20px sans-serif', '#5f6a61', 'right', 'middle', '更新 ' + formatUpdated(game && game.updatedAt), HEADER_R - 16, 84, 200);
       var banner = bannerText(game);
-      if (!banner) return;
-      round(SAFE_L, BANNER_TOP, SAFE_R - SAFE_L, BANNER_H, 12);
-      ctx.fillStyle = game && game.status === 'error' ? 'rgba(240,178,122,0.14)' : 'rgba(255,248,240,0.06)';
-      ctx.fill();
-      drawText('600 22px sans-serif', game && game.status === 'error' ? '#f0b27a' : '#d9cec0', 'left', 'middle', banner, SAFE_L + 16, BANNER_TOP + BANNER_H / 2, SAFE_R - SAFE_L - 32);
+      if (banner) {
+        drawText('600 22px sans-serif', game && game.status === 'error' ? '#9a542d' : '#5f6a61', 'left', 'middle', banner, SAFE_L + 16, BANNER_TOP + BANNER_H / 2, HEADER_W - 32);
+      }
     }
 
     function paintWidgetDetail(info, game, top, h) {
@@ -606,16 +831,15 @@
       var leftW = panelW - 32;
       var cx = SAFE_L + panelW / 2;
       // Match the overview's type scale, soft surfaces and spacing.
-      round(SAFE_L, top, panelW, h, 25);
-      ctx.fillStyle = theme.paper; ctx.fill();
+      paintGlassPanel(SAFE_L, top, panelW, h, CARD_RADIUS, theme);
       ctx.save();
-      round(SAFE_L, top, panelW, h, 25); ctx.clip();
+      round(SAFE_L, top, panelW, h, CARD_RADIUS); ctx.clip();
       if (compact) {
         paintHomeAsset(info.id + 'Primary', leftX + 12, top + 18, 46);
         drawText('600 20px sans-serif', theme.ink, 'left', 'middle', metricLabel(primary, info.primary), leftX + 74, top + 41, leftW - 74);
       } else {
         ctx.beginPath(); ctx.arc(cx, top + 62, 37, 0, Math.PI * 2);
-        ctx.fillStyle = theme.soft; ctx.fill();
+        ctx.fillStyle = tint(theme.soft, 0.76); ctx.fill();
         paintHomeAsset(info.id + 'Primary', cx - 33, top + 29, 66);
         drawText('600 19px sans-serif', theme.ink, 'center', 'middle', metricLabel(primary, info.primary), cx, top + 119, leftW);
       }
@@ -626,7 +850,11 @@
       drawText('600 20px sans-serif', theme.ink, 'left', 'middle', recoveryLine(primary), leftX + 62, top + (compact ? 196 : 259), leftW - 66);
       var dailyY = top + h - 110;
       round(leftX, dailyY, leftW, 90, 16);
-      ctx.fillStyle = theme.soft; ctx.fill();
+      ctx.fillStyle = tint(theme.soft, 0.76); ctx.fill();
+      round(leftX, dailyY, leftW, 90, 16);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = 'rgba(255,255,255,0.34)';
+      ctx.stroke();
       var dailyValue = displayScalar(daily && daily.current) + ' / ' + displayScalar(daily && daily.max);
       if (info.id === 'genshin') {
         drawText('600 20px sans-serif', theme.ink, 'left', 'middle', metricLabel(daily, info.daily), leftX + 14, dailyY + 25, 100);
@@ -644,8 +872,7 @@
 
       var panelX = SAFE_L + panelW + 16;
       var panelRightW = SAFE_R - panelX;
-      round(panelX, top, panelRightW, h, 25);
-      ctx.fillStyle = theme.paper; ctx.fill();
+      paintGlassPanel(panelX, top, panelRightW, h, CARD_RADIUS, theme);
       var rightX = panelX + 18;
       var rightW = panelRightW - 36;
       drawText('700 24px sans-serif', theme.ink, 'left', 'middle', '今日一览', rightX, top + 33, rightW);
@@ -676,7 +903,7 @@
           drawText(valueFont, row.highlight ? theme.ink : '#28342f', 'right', 'middle', value, rightX + rightW, ry + rowH / 2, valueW + 2);
         }
         if (ri < rows.length - 1) {
-          ctx.fillStyle = '#dadccf'; ctx.fillRect(rightX, ry + rowH, rightW, 1);
+          ctx.fillStyle = 'rgba(70,84,70,0.16)'; ctx.fillRect(rightX, ry + rowH, rightW, 1);
         }
       }
     }
@@ -690,62 +917,120 @@
       paintWidgetDetail(info, game, top, h);
     }
 
-    function paintSpinner(x, y) {
+    function paintSpinner(x, y, color) {
       var angle = ((clock() % 1000) / 1000) * Math.PI * 2;
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(angle);
       ctx.beginPath();
       ctx.arc(0, 0, 10, 0.2, Math.PI * 1.45);
-      ctx.strokeStyle = '#f7f1e8';
+      ctx.strokeStyle = color || '#f7f1e8';
       ctx.lineWidth = 3;
       ctx.stroke();
       ctx.restore();
     }
 
     function paintChrome() {
-      drawText('700 36px sans-serif', '#f7f1e8', 'left', 'middle', pageTitle(), SAFE_L, 38, 220);
+      var game = page > 0 ? gameById(GAMES[page - 1].id) : null;
+      var banner = page > 0 ? bannerText(game) : '';
+      var headerY = 10;
+      var headerH = page <= 0 ? 56 : (banner ? 156 : 100);
+      paintHeaderGlass(SAFE_L, headerY, HEADER_W, headerH, 24);
+      var contentX = SAFE_L + 16;
+      var contentRight = HEADER_R - 16;
+
+      var title = fitText(pageTitle(), 220);
       ctx.font = '700 36px sans-serif';
-      var titleW = ctx.measureText(fitText(pageTitle(), 220)).width;
+      var titleW = ctx.measureText(title).width;
       var hint = hintString();
-      var hintColor = '#e9dfd1';
-      if (fault && pull <= 0 && !refreshing) hintColor = '#f0b27a';
-      if (pull >= PULL || refreshing) hintColor = '#f7f1e8';
-      var hintX = SAFE_L + titleW + 18;
-      var hintMax = SAFE_R - hintX - (refreshing ? 72 : 12);
-      drawText('600 16px sans-serif', hintColor, 'left', 'middle', hint, hintX, 40, hintMax);
+      var hintX = contentX + titleW + 18;
+      var hintMax = contentRight - hintX - (refreshing ? 72 : 0);
+      ctx.font = '600 16px sans-serif';
+      var shownHint = fitText(hint, hintMax);
+      var hintW = ctx.measureText(shownHint).width;
+      var hintColor = '#5a665c';
+      if (fault && pull <= 0 && !refreshing) hintColor = '#9a542d';
+      if (pull >= PULL || refreshing) hintColor = '#2f3a33';
+      drawText('700 36px sans-serif', '#2f3a33', 'left', 'middle', title, contentX, 38, 220);
+      drawText('600 16px sans-serif', hintColor, 'left', 'middle', shownHint, hintX, 40, hintMax);
       if (refreshing) {
-        // Keep the spinner beside the refresh label, clear of the screen's rounded corner.
-        var spinnerX = hintX + ctx.measureText(fitText(hint, hintMax)).width + 22;
-        paintSpinner(spinnerX, 40);
+        var spinnerX = hintX + hintW + 22;
+        paintSpinner(spinnerX, 40, '#315c50');
       }
       if (pull > 0) {
-        ctx.fillStyle = page > 0 ? GAMES[page - 1].accent : '#f3eadf';
-        ctx.fillRect(SAFE_L, 62, (SAFE_R - SAFE_L) * Math.min(1, pull / PULL), 3);
+        round(contentX, headerY + headerH - 4, (contentRight - contentX) * Math.min(1, pull / PULL), 3, 1.5);
+        ctx.fillStyle = page > 0 ? GAMES[page - 1].accent : '#315c50';
+        ctx.fill();
       }
     }
 
     function paintDots() {
+      round(dotCenter(0) - 20, DOT_CY - 18, dotCenter(3) - dotCenter(0) + 40, 36, 18);
+      ctx.fillStyle = 'rgba(8,12,18,0.18)'; ctx.fill();
+      round(dotCenter(0) - 20, DOT_CY - 18, dotCenter(3) - dotCenter(0) + 40, 36, 18);
+      ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.stroke();
       var i;
       for (i = 0; i < 4; i++) {
         var cx = dotCenter(i);
         var active = i === page;
-        var color = active ? (i === 0 ? '#f7f1e8' : GAMES[i - 1].accent) : 'rgba(255,244,230,0.28)';
+        var color = active ? (i === 0 ? '#f7f1e8' : GAMES[i - 1].accent) : 'rgba(255,255,255,0.34)';
+        if (active) {
+          ctx.beginPath();
+          ctx.arc(cx, DOT_CY, 15, 0, Math.PI * 2);
+          ctx.fillStyle = tint(color, 0.14);
+          ctx.fill();
+        }
         ctx.beginPath();
-        ctx.arc(cx, DOT_CY, active ? 8 : 5, 0, Math.PI * 2);
+        ctx.arc(cx, DOT_CY, active ? 7 : 4.5, 0, Math.PI * 2);
         ctx.fillStyle = color;
         ctx.fill();
       }
     }
 
-    function paintBackground() {
+    function paintBackdropBase(key) {
+      var palette = {
+        genshin: ['#0d1b19', '#071013'],
+        hsr: ['#191426', '#090a12'],
+        zzz: ['#1c1426', '#0a0c14'],
+        home: ['#111722', '#07090f']
+      }[key] || ['#111722', '#07090f'];
       if (ctx.createLinearGradient) {
         var gradient = ctx.createLinearGradient(0, 0, DESIGN_W, DESIGN_H);
-        gradient.addColorStop(0, '#141210');
-        gradient.addColorStop(1, '#1b1714');
+        gradient.addColorStop(0, palette[0]);
+        gradient.addColorStop(1, palette[1]);
         ctx.fillStyle = gradient;
-      } else ctx.fillStyle = '#141210';
+      } else ctx.fillStyle = palette[1];
       ctx.fillRect(0, 0, DESIGN_W, DESIGN_H);
+    }
+
+    function paintBackdropImage(key, alpha) {
+      var entry = backgroundEntry(key);
+      if (!entry || !entry.sharp || !entry.sharp.loaded || !entry.sharp.image) return false;
+      if (typeof ctx.drawImage !== 'function') return false;
+      ctx.save();
+      try {
+        ctx.globalAlpha = alpha;
+        ctx.drawImage(entry.sharp.image, 0, 0, DESIGN_W, DESIGN_H);
+      } finally {
+        ctx.restore();
+      }
+      return true;
+    }
+
+    function paintBackground() {
+      var current = backgroundKeyFor(page);
+      var progress = 0;
+      if (fade) {
+        progress = clamp((clock() - fade.start) / BG_FADE_MS, 0, 1);
+        if (progress >= 1) fade = null;
+      }
+      paintBackdropBase(fade ? fade.fromKey : current);
+      if (fade) {
+        paintBackdropImage(fade.fromKey, 1);
+        paintBackdropImage(fade.toKey, easeOut(progress));
+      } else {
+        paintBackdropImage(current, 1);
+      }
     }
 
     function dampPull() {
@@ -808,7 +1093,7 @@
         rafId = 0;
         if (stopped) return;
         paint();
-        if (!stopped && refreshing) requestDraw();
+        if (!stopped && (refreshing || fade)) requestDraw();
       });
     }
 
@@ -859,8 +1144,26 @@
       requestDraw();
     }
 
+    function setBackgrounds(next) {
+      if (stopped) return;
+      var changed = false;
+      for (var i = 0; i < BACKGROUND_PAGES.length; i++) {
+        var pageKey = BACKGROUND_PAGES[i];
+        var normalized = normalizePageBackground(next && next[pageKey]);
+        var current = customBackgrounds[pageKey];
+        var same = (!normalized && !current) ||
+          (normalized && current && normalized.custom === current.custom && normalized.customBlur === current.customBlur);
+        if (!same) {
+          customBackgrounds[pageKey] = loadPageBackground(normalized);
+          changed = true;
+        }
+      }
+      if (changed) { fade = null; requestDraw(); }
+    }
+
     function goTo(index) {
       if (stopped) return;
+      var fromKey = fade ? fade.toKey : backgroundKeyFor(page);
       var n = Math.round(Number(index));
       if (!isFinite(n)) n = 0;
       var next = clamp(n, 0, 3);
@@ -873,7 +1176,10 @@
       axis = null;
       mode = null;
       remeasure();
-      if (changed) emitPage();
+      if (changed) {
+        startBackgroundFade(fromKey, backgroundKeyFor(page));
+        emitPage();
+      }
       requestDraw();
     }
 
@@ -1107,6 +1413,11 @@
       homeImageLoaders.forEach(function (img) { img.onload = null; img.onerror = null; });
       homeImageLoaders.length = 0;
       homeImages = {};
+      backgroundLoaders.forEach(function (img) { img.onload = null; img.onerror = null; });
+      backgroundLoaders.length = 0;
+      backgrounds = {};
+      customBackgrounds = {};
+      fade = null;
       activeId = null;
       startX = null;
       if (canvas.__hoyoCardControllerDestroy === destroy) {
@@ -1130,6 +1441,7 @@
 
     return {
       setSnapshot: setSnapshot,
+      setBackgrounds: setBackgrounds,
       goTo: goTo,
       getState: getState,
       destroy: destroy

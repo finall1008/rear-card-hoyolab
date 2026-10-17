@@ -14,8 +14,8 @@
 {
   "id": "dev.finall.hoyolab",
   "name": "米游社",
-  "version": "0.1.3",
-  "versionCode": 4,
+  "version": "0.1.4",
+  "versionCode": 5,
   "apiVersion": 2,
   "author": "finall1008",
   "capabilities": ["network", "storage"],
@@ -31,7 +31,7 @@ npm --prefix tools/card-build ci
 node scripts/build-home-assets.mjs
 npm run build:bridge
 node scripts/build-module.mjs
-node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.3.zip
+node tools/card-build/bin/card-build.js dist/module dist/rear-card-hoyolab-0.1.4.zip
 ```
 
 构建过程：
@@ -77,7 +77,8 @@ background/
 | --- | --- |
 | `hoyolab.identity` | 稳定设备 UUID 和指纹刷新基准 |
 | `hoyolab.auth` | Token、Cookie、待完成认证状态、角色和每角色指纹 |
-| `hoyolab.settings` | 角色选择 |
+| `hoyolab.settings` | 角色选择、每页背景模式（default/custom） |
+| `hoyolab.background.<page>` | 该页自定义背景的 base64 + 模糊背板；无自定义时不写 |
 | `hoyolab.note.<game>` | 各游戏便笺、所属账号实例与角色 |
 
 认证步骤等待持久化后返回，设置页重新打开可从存储恢复。后台独立上下文读取同一份数据，只更新便笺和快照；退出或换角期间到达的响应不能恢复已失效账号。

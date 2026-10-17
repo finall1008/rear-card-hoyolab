@@ -14,6 +14,12 @@ const FILES = new Map([
   ['/preview.js', ['preview/app.js', 'text/javascript; charset=utf-8']],
   ['/home-assets.js', ['card/home-assets.js', 'text/javascript; charset=utf-8']],
   ['/card.js', ['card/card.js', 'text/javascript; charset=utf-8']],
+  ['/assets/bg-genshin.jpg', ['card/assets/bg-genshin.jpg', 'image/jpeg']],
+  ['/assets/bg-hsr.jpg', ['card/assets/bg-hsr.jpg', 'image/jpeg']],
+  ['/assets/bg-zzz.jpg', ['card/assets/bg-zzz.jpg', 'image/jpeg']],
+  ['/assets/bg-genshin-blur.jpg', ['card/assets/bg-genshin-blur.jpg', 'image/jpeg']],
+  ['/assets/bg-hsr-blur.jpg', ['card/assets/bg-hsr-blur.jpg', 'image/jpeg']],
+  ['/assets/bg-zzz-blur.jpg', ['card/assets/bg-zzz-blur.jpg', 'image/jpeg']],
   ['/source.tar.gz', ['dist/bridge/webroot/source.tar.gz', 'application/gzip']],
 ]);
 export function createPreviewProvider({ upstream = 'http://127.0.0.1:18766', snapshotFile = resolve(ROOT, '.local/card-snapshot.json'), request = fetch } = {}) {
@@ -43,8 +49,15 @@ export function createPreviewProvider({ upstream = 'http://127.0.0.1:18766', sna
     tail = next.catch(() => {});
     return next;
   };
+  async function background(page) {
+    const response = await request(`${url.origin}/api/background/${page}`, { signal: AbortSignal.timeout(10000) });
+    if (!response.ok) return null;
+    const data = await response.json();
+    return data && data.value ? data.value : null;
+  }
   return {
     read: () => enqueue(async () => persist(await getState())),
+    background,
     refresh: scope => {
       const targets = refreshTargets(scope);
       return enqueue(async () => {
@@ -81,6 +94,8 @@ export function createPreviewServer(provider) {
         res.writeHead(200, { 'Content-Type': type }); return res.end(body);
       }
       if (req.method === 'GET' && path === '/api/card/state') return json(200, { snapshot: await provider.read(), csrf });
+      const previewBackground = path.match(/^\/api\/card\/background\/(home|genshin|hsr|zzz)$/);
+      if (req.method === 'GET' && previewBackground) return json(200, { page: previewBackground[1], value: typeof provider.background === 'function' ? await provider.background(previewBackground[1]) : null });
       if (req.method !== 'POST' || path !== '/api/card/refresh') return json(404, { error: '未找到页面' });
       if (req.headers.origin !== `http://${req.headers.host}`) return json(403, { error: '来源不匹配' });
       const token = Buffer.from(req.headers['x-csrf-token'] ?? '');

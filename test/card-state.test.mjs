@@ -60,6 +60,7 @@ test('preview uses existing authenticated host, targets only requested game, awa
   const file = join(dir, 'snapshot.json');
   const s = state(), refreshed = [];
   const provider = createPreviewProvider({ snapshotFile: file, request: async (url, options) => {
+    if (url.includes('/api/background/')) return { ok: true, json: async () => ({ value: null }) };
     if (options.method === 'POST') {
       assert.equal(options.headers['X-CSRF-Token'], 'SECRET_CSRF'); assert.equal(options.headers.Origin, 'http://127.0.0.1:18766');
       refreshed.push(JSON.parse(options.body).game);
@@ -70,6 +71,28 @@ test('preview uses existing authenticated host, targets only requested game, awa
   await provider.refresh('hsr'); assert.deepEqual(refreshed, ['hsr']);
   await provider.refresh('all'); assert.deepEqual(refreshed, ['hsr', 'genshin', 'hsr', 'zzz']);
   const saved = await readFile(file, 'utf8'); assert.ok(!saved.includes('SECRET_')); assert.deepEqual(JSON.parse(saved).games, first.games);
+});
+test('preview serves the three card backgrounds and allows data-url custom images', async t => {
+  const server = createPreviewServer({
+    read: async () => buildCardSnapshot(state()),
+    refresh: async () => buildCardSnapshot(state()),
+    background: async page => page === 'home' ? { custom: 'data:image/jpeg;base64,AA==', customBlur: 'data:image/jpeg;base64,AA==' } : null,
+  });
+  await new Promise(resolve => server.listen(0, '127.0.0.1', resolve)); t.after(() => server.close());
+  const base = `http://127.0.0.1:${server.address().port}`;
+  for (const game of ['genshin', 'hsr', 'zzz']) {
+    for (const suffix of ['.jpg', '-blur.jpg']) {
+      const response = await fetch(`${base}/assets/bg-${game}${suffix}`);
+      assert.equal(response.status, 200, `${game}${suffix}`);
+      assert.equal(response.headers.get('content-type'), 'image/jpeg');
+      assert.ok((await response.arrayBuffer()).byteLength > 10000, `${game}${suffix}`);
+    }
+  }
+  const page = await fetch(`${base}/`);
+  assert.match(page.headers.get('content-security-policy'), /img-src 'self' data:/);
+  const background = await (await fetch(`${base}/api/card/background/home`)).json();
+  assert.equal(background.page, 'home');
+  assert.equal(background.value.custom, 'data:image/jpeg;base64,AA==');
 });
 test('preview refresh rejects cross-origin/missing CSRF and never returns upstream secrets', async t => {
   let scopes = [];
