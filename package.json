@@ -1,13 +1,25 @@
 {
   "name": "rear-card-hoyolab",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "private": true,
   "author": "finall1008",
   "type": "module",
   "description": "米游社背屏卡片；支持三游戏便笺、国服扫码认证与 Rear Card Bridge API 2",
   "license": "AGPL-3.0-or-later",
-  "engines": { "node": ">=22" },
-  "scripts": { "start": "node server.mjs", "preview:card": "node preview-server.mjs", "test": "node --test", "build:bridge": "node scripts/build-bridge.mjs" },
-  "dependencies": { "qrcode": "1.5.4", "@noble/hashes": "2.4.0" },
-  "devDependencies": { "esbuild": "0.28.2" }
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "start": "node server.mjs",
+    "preview:card": "node preview-server.mjs",
+    "test": "node --test",
+    "build:bridge": "node scripts/build-bridge.mjs"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4",
+    "@noble/hashes": "2.4.0"
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2"
+  }
 }

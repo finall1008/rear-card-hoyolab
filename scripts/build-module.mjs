@@ -13,8 +13,8 @@ const bridgeDist = path.join(root, 'dist', 'bridge');
 export const MODULE_MANIFEST = {
   id: 'dev.finall.hoyolab',
   name: '米游社',
-  version: '0.1.6',
-  versionCode: 7,
+  version: '0.1.7',
+  versionCode: 8,
   apiVersion: 2,
   description: '米游社每日委托与体力卡片：首页三游戏并列，详情页左右两栏，支持下拉刷新与后台定时更新。',
   author: 'finall1008',
@@ -53,6 +53,7 @@ async function main() {
     copyFileSync(path.join(root, 'card', 'assets', name), path.join(outDir, 'card', 'assets', name));
   }
   writeFileSync(path.join(outDir, 'module.json'), JSON.stringify(MODULE_MANIFEST, null, 2) + '\n');
+  copyFileSync(path.join(root, 'icon.png'), path.join(outDir, 'icon.png'));
 
   // 设置页与后台刷新入口：直接复用 dist/bridge 产物（webroot 首脚本须为 bridge-shim.js）。
   const webroot = path.join(bridgeDist, 'webroot');
