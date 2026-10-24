@@ -14,6 +14,8 @@ import { bridgeCardProvider } from './card-provider.mjs';
   'use strict';
 
   var BACKGROUND_PAGES = ['home', 'genshin', 'hsr', 'zzz'];
+  var PAGE_BACKGROUND_KEYS = ['home', 'home', 'genshin', 'hsr', 'zzz'];
+  var CARD_PAGE_KEY = 'hoyolab.card.page';
   var REFRESH_TIMEOUT_MS = 30000;
   // Leave room for the card snapshot's data fields below the bridge's 512K limit.
   var SNAPSHOT_BACKGROUND_LIMIT = 460 * 1024;
@@ -61,11 +63,12 @@ import { bridgeCardProvider } from './card-provider.mjs';
       });
     }
     var pendingBackgrounds = {};
-    var currentPage = 0;
+    var currentPage = 1;
+    var pageRevision = 0;
     var snapshotSaveChain = Promise.resolve();
 
     function pageKey(pageIndex) {
-      return BACKGROUND_PAGES[pageIndex] || 'home';
+      return PAGE_BACKGROUND_KEYS[pageIndex] || 'home';
     }
 
     // Read one page per bridge batch. The live carrier returns synchronous storage
@@ -119,6 +122,21 @@ import { bridgeCardProvider } from './card-provider.mjs';
       });
     }
 
+    function savePage() {
+      if (bridge.card.saveSnapshot) {
+        var base = bridge.card.readSnapshot() || {};
+        var next = {};
+        for (var key in base) {
+          if (Object.prototype.hasOwnProperty.call(base, key)) next[key] = base[key];
+        }
+        next.page = currentPage;
+        // The host updates its local snapshot synchronously, before sleep.
+        var pending = bridge.card.saveSnapshot(next);
+        if (pending && pending.catch) pending.catch(function (error) { fail('页码快照保存失败: ' + error); });
+      }
+      bridge.storage.set(CARD_PAGE_KEY, currentPage).catch(function (error) { fail('页码保存失败: ' + error); });
+    }
+
     function refreshBackgrounds(pageIndex) {
       var page = pageKey(pageIndex);
       if (pendingBackgrounds[page]) return pendingBackgrounds[page];
@@ -154,6 +172,7 @@ import { bridgeCardProvider } from './card-provider.mjs';
     var controller = globalThis.HoyoCard.mount({
       canvas: canvas,
       initialSnapshot: provider.initialSnapshot,
+      initialPage: cachedSnapshot && cachedSnapshot.page,
       backgrounds: loadedBackgrounds,
       refresh: function (scope) {
         return refreshWithTimeout(provider.refresh(scope), REFRESH_TIMEOUT_MS).then(function (snapshot) {
@@ -165,6 +184,8 @@ import { bridgeCardProvider } from './card-provider.mjs';
       },
       onPageChange: function (page) {
         currentPage = page;
+        pageRevision++;
+        savePage();
         refreshBackgrounds(page);
       },
       onStatus: function () {},
@@ -175,6 +196,13 @@ import { bridgeCardProvider } from './card-provider.mjs';
     } catch (_) { /* keep home */ }
     refreshBackgrounds(currentPage);
     if (currentPage !== 0 && !loadedBackgrounds.home) refreshBackgrounds(0);
+    if (!cachedSnapshot || cachedSnapshot.page === undefined) {
+      var initialPageRevision = pageRevision;
+      bridge.storage.get(CARD_PAGE_KEY).then(function (value) {
+        if (pageRevision !== initialPageRevision || typeof value !== 'number') return;
+        controller.goTo(value);
+      }).catch(function (error) { fail('页码读取失败: ' + error); });
+    }
     // 前台刷新或后台任务写入共享快照后，载体把 snapshotRev 同步进 localStorage；
     // 下一次 requestRefresh/刷新广播时重读即可。这里同时挂 onRefresh 兜底。
     if (typeof bridge.card.onRefresh === 'function') {

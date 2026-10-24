@@ -35,7 +35,7 @@
     { paper: '#e9ebd5', ink: '#535e2a', soft: '#d7ddac', track: '#cfd3b8' }
   ];
   var CARD_RADIUS = 25;
-  var BG_FADE_MS = 260;
+  var PAGE_TRANSITION_MS = 360;
   // 角色背景按 912×596 直接裁切；blur 版本用于卡片背板的真实模糊。
   var BG_ASSETS = {
     genshin: { sharp: 'assets/bg-genshin.jpg', blur: 'assets/bg-genshin-blur.jpg' },
@@ -162,9 +162,9 @@
     return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
   }
 
-  function easeOut(progress) {
+  function easeInOut(progress) {
     var p = clamp(progress, 0, 1);
-    return p * p * (3 - 2 * p);
+    return p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
   }
 
   function normalizePageBackground(value) {
@@ -212,7 +212,7 @@
   }
 
   function dotCenter(index) {
-    return (SAFE_L + SAFE_R) / 2 + (index - 1.5) * DOT_GAP;
+    return (SAFE_L + SAFE_R) / 2 + (index - 2) * DOT_GAP;
   }
 
   function dotHit(index) {
@@ -237,7 +237,9 @@
 
     var view = typeof window !== 'undefined' ? window : root;
     var snapshot = { schema: 1, updatedAt: null, games: {} };
-    var page = 0;
+    var initialPage = typeof options.initialPage === 'number' ? Math.round(options.initialPage) : 1;
+    if (!isFinite(initialPage)) initialPage = 1;
+    var page = clamp(initialPage, 0, 4);
     var scrollY = 0;
     var scrollOrigin = 0;
     var maxScroll = 0;
@@ -266,7 +268,9 @@
     var backgrounds = {};
     var customBackgrounds = {};
     var backgroundLoaders = [];
-    var fade = null;
+    var paintedPage = page;
+    var pagePosition = page;
+    var pageTransition = null;
 
     for (var gi = 0; gi < GAMES.length; gi++) {
       backgrounds[GAMES[gi].id] = loadBackgroundPair(BG_ASSETS[GAMES[gi].id].sharp, BG_ASSETS[GAMES[gi].id].blur);
@@ -323,7 +327,7 @@
     }
 
     function backgroundKeyFor(current) {
-      return current === 0 ? 'home' : GAMES[current - 1].id;
+      return current <= 1 ? 'home' : GAMES[current - 2].id;
     }
 
     function backgroundEntry(key) {
@@ -331,19 +335,6 @@
       if (custom && custom.sharp && custom.sharp.src) return custom;
       var defaultKey = key === 'home' ? homeGame : key;
       return backgrounds[defaultKey] || null;
-    }
-
-    function backgroundLoaded(key) {
-      var entry = backgroundEntry(key);
-      return !!(entry && entry.sharp && entry.sharp.loaded);
-    }
-
-    function startBackgroundFade(fromKey, toKey) {
-      if (!fromKey || fromKey === toKey || !backgroundLoaded(fromKey) || !backgroundLoaded(toKey)) {
-        fade = null;
-        return;
-      }
-      fade = { fromKey: fromKey, toKey: toKey, start: clock() };
     }
 
     function parseTime(value) {
@@ -448,9 +439,7 @@
     }
 
     function pageHint() {
-      if (page === 1) return GAMES[0].hint;
-      if (page === 2) return GAMES[1].hint;
-      if (page === 3) return GAMES[2].hint;
+      if (paintedPage >= 2 && paintedPage <= 4) return GAMES[paintedPage - 2].hint;
       return '下拉刷新全部';
     }
 
@@ -463,17 +452,16 @@
     }
 
     function pageTitle() {
-      if (page <= 0) return '总览';
-      var info = GAMES[page - 1];
+      if (paintedPage === 1) return '总览';
+      if (paintedPage <= 0) return '';
+      var info = GAMES[paintedPage - 2];
       var game = gameById(info.id);
       if (game && game.name != null && String(game.name) !== '') return String(game.name);
       return info.name;
     }
 
     function scopeFor(index) {
-      if (index === 1) return 'genshin';
-      if (index === 2) return 'hsr';
-      if (index === 3) return 'zzz';
+      if (index >= 2 && index <= 4) return GAMES[index - 2].id;
       return 'all';
     }
 
@@ -587,7 +575,7 @@
         ctx.fillStyle = 'rgba(8,12,16,' + (0.05 * layer) + ')';
         ctx.fill();
       }
-      var pair = backgroundEntry(backgroundKeyFor(page));
+      var pair = backgroundEntry(backgroundKeyFor(paintedPage));
       var blur = pair && pair.blur && pair.blur.loaded ? pair.blur.image : null;
       ctx.save();
       round(x, y, w, h, r);
@@ -624,7 +612,7 @@
         ctx.fill();
       }
 
-      var key = backgroundKeyFor(page);
+      var key = backgroundKeyFor(paintedPage);
       var pair = backgroundEntry(key);
       var blur = pair && pair.blur && pair.blur.loaded ? pair.blur.image : null;
 
@@ -822,7 +810,7 @@
     }
 
     function paintWidgetDetail(info, game, top, h) {
-      var theme = HOME_THEMES[page - 1];
+      var theme = HOME_THEMES[paintedPage - 2];
       var primary = game && game.primary ? game.primary : null;
       var daily = game && game.daily ? game.daily : null;
       var compact = h < 370;
@@ -909,7 +897,7 @@
     }
 
     function paintDetail() {
-      var info = GAMES[page - 1];
+      var info = GAMES[paintedPage - 2];
       var game = gameById(info.id);
       paintDetailChrome(info, game);
       var top = scrollTopFor(game);
@@ -931,10 +919,10 @@
     }
 
     function paintChrome() {
-      var game = page > 0 ? gameById(GAMES[page - 1].id) : null;
-      var banner = page > 0 ? bannerText(game) : '';
+      var game = paintedPage >= 2 ? gameById(GAMES[paintedPage - 2].id) : null;
+      var banner = paintedPage >= 2 ? bannerText(game) : '';
       var headerY = 10;
-      var headerH = page <= 0 ? 56 : (banner ? 156 : 100);
+      var headerH = paintedPage <= 1 ? 56 : (banner ? 156 : 100);
       paintHeaderGlass(SAFE_L, headerY, HEADER_W, headerH, 24);
       var contentX = SAFE_L + 16;
       var contentRight = HEADER_R - 16;
@@ -959,21 +947,40 @@
       }
       if (pull > 0) {
         round(contentX, headerY + headerH - 4, (contentRight - contentX) * Math.min(1, pull / PULL), 3, 1.5);
-        ctx.fillStyle = page > 0 ? GAMES[page - 1].accent : '#315c50';
+        ctx.fillStyle = paintedPage >= 2 ? GAMES[paintedPage - 2].accent : '#315c50';
         ctx.fill();
       }
     }
 
+    function paintStaminaHeader() {
+      paintHeaderGlass(SAFE_L, 10, HEADER_W, 56, 24);
+      var innerX = SAFE_L + 12;
+      var columnW = (HEADER_W - 24) / 3;
+      ctx.font = '700 32px sans-serif';
+      for (var i = 0; i < 3; i++) {
+        var info = GAMES[i];
+        var game = gameById(info.id);
+        var primary = game && game.primary ? game.primary : null;
+        var value = fitText(displayScalar(primary && primary.current), 72);
+        var textW = ctx.measureText(value).width;
+        var groupW = 40 + 10 + textW;
+        var startX = innerX + columnW * i + (columnW - groupW) / 2;
+        paintHomeAsset(info.id + 'Primary', startX, 18, 40);
+        drawText('700 32px sans-serif', '#28342f', 'left', 'middle', value, startX + 50, 39, 72);
+      }
+    }
+
     function paintDots() {
-      round(dotCenter(0) - 20, DOT_CY - 18, dotCenter(3) - dotCenter(0) + 40, 36, 18);
+      if (page === 0) return;
+      round(dotCenter(0) - 20, DOT_CY - 18, dotCenter(4) - dotCenter(0) + 40, 36, 18);
       ctx.fillStyle = 'rgba(8,12,18,0.18)'; ctx.fill();
-      round(dotCenter(0) - 20, DOT_CY - 18, dotCenter(3) - dotCenter(0) + 40, 36, 18);
+      round(dotCenter(0) - 20, DOT_CY - 18, dotCenter(4) - dotCenter(0) + 40, 36, 18);
       ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.16)'; ctx.stroke();
       var i;
-      for (i = 0; i < 4; i++) {
+      for (i = 0; i < 5; i++) {
         var cx = dotCenter(i);
         var active = i === page;
-        var color = active ? (i === 0 ? '#f7f1e8' : GAMES[i - 1].accent) : 'rgba(255,255,255,0.34)';
+        var color = active ? (i <= 1 ? '#f7f1e8' : GAMES[i - 2].accent) : 'rgba(255,255,255,0.34)';
         if (active) {
           ctx.beginPath();
           ctx.arc(cx, DOT_CY, 15, 0, Math.PI * 2);
@@ -1017,20 +1024,10 @@
       return true;
     }
 
-    function paintBackground() {
-      var current = backgroundKeyFor(page);
-      var progress = 0;
-      if (fade) {
-        progress = clamp((clock() - fade.start) / BG_FADE_MS, 0, 1);
-        if (progress >= 1) fade = null;
-      }
-      paintBackdropBase(fade ? fade.fromKey : current);
-      if (fade) {
-        paintBackdropImage(fade.fromKey, 1);
-        paintBackdropImage(fade.toKey, easeOut(progress));
-      } else {
-        paintBackdropImage(current, 1);
-      }
+    function paintBackground(index) {
+      var key = backgroundKeyFor(index);
+      paintBackdropBase(key);
+      paintBackdropImage(key, 1);
     }
 
     function dampPull() {
@@ -1040,7 +1037,7 @@
 
     function rubberX() {
       if (!dragX) return 0;
-      var edge = (page <= 0 && dragX > 0) || (page >= 3 && dragX < 0);
+      var edge = (page <= 0 && dragX > 0) || (page >= 4 && dragX < 0);
       var limited = clamp(dragX, -110, 110);
       return edge ? limited * 0.22 : limited * 0.42;
     }
@@ -1053,24 +1050,62 @@
       };
     }
 
+    function updatePagePosition() {
+      if (!pageTransition) return pagePosition;
+      var progress = clamp((clock() - pageTransition.start) / PAGE_TRANSITION_MS, 0, 1);
+      if (progress >= 1) {
+        pageTransition = null;
+        pagePosition = page;
+        return pagePosition;
+      }
+      pagePosition = pageTransition.from + (pageTransition.to - pageTransition.from) * easeInOut(progress);
+      return pagePosition;
+    }
+
+    function paintSinglePage(index) {
+      var previous = paintedPage;
+      paintedPage = index;
+      try {
+        paintBackground(index);
+        if (index === 0) {
+          paintStaminaHeader();
+          return;
+        }
+        paintChrome();
+        ctx.save();
+        try {
+          ctx.translate(0, dampPull());
+          if (index === 1) {
+            for (var i = 0; i < 3; i++) paintColumn(i);
+          } else paintDetail();
+        } finally {
+          ctx.restore();
+        }
+      } finally {
+        paintedPage = previous;
+      }
+    }
+
     function paint() {
       var size = metrics();
+      var position = updatePagePosition() - rubberX() / DESIGN_W;
       ctx.save();
       try {
         ctx.globalAlpha = 1;
         if (ctx.setTransform) ctx.setTransform(size.w / DESIGN_W, 0, 0, size.h / DESIGN_H, 0, 0);
         else if (ctx.scale) ctx.scale(size.w / DESIGN_W, size.h / DESIGN_H);
-        paintBackground();
-        paintChrome();
-        ctx.save();
-        try {
-          ctx.translate(rubberX(), dampPull());
-          if (page <= 0) {
-            var i;
-            for (i = 0; i < 3; i++) paintColumn(i);
-          } else paintDetail();
-        } finally {
-          ctx.restore();
+        // Fill the exposed strip while rubber-banding at either end.
+        paintBackdropBase(backgroundKeyFor(page));
+        for (var i = 0; i < 5; i++) {
+          var offset = (i - position) * DESIGN_W;
+          if (offset <= -DESIGN_W || offset >= DESIGN_W) continue;
+          ctx.save();
+          try {
+            ctx.translate(offset, 0);
+            paintSinglePage(i);
+          } finally {
+            ctx.restore();
+          }
         }
         paintDots();
       } finally {
@@ -1093,7 +1128,7 @@
         rafId = 0;
         if (stopped) return;
         paint();
-        if (!stopped && (refreshing || fade)) requestDraw();
+        if (!stopped && (refreshing || pageTransition)) requestDraw();
       });
     }
 
@@ -1158,16 +1193,17 @@
           changed = true;
         }
       }
-      if (changed) { fade = null; requestDraw(); }
+      if (changed) requestDraw();
     }
 
     function goTo(index) {
       if (stopped) return;
-      var fromKey = fade ? fade.toKey : backgroundKeyFor(page);
+      var from = updatePagePosition() - rubberX() / DESIGN_W;
       var n = Math.round(Number(index));
-      if (!isFinite(n)) n = 0;
-      var next = clamp(n, 0, 3);
+      if (!isFinite(n)) n = 1;
+      var next = clamp(n, 0, 4);
       var changed = next !== page;
+      var continuing = !changed && pageTransition && pageTransition.to === next && !dragX;
       page = next;
       scrollY = 0;
       scrollOrigin = 0;
@@ -1176,34 +1212,41 @@
       axis = null;
       mode = null;
       remeasure();
-      if (changed) {
-        startBackgroundFade(fromKey, backgroundKeyFor(page));
-        emitPage();
+      if (!continuing) {
+        if (Math.abs(from - next) < 0.001) {
+          pageTransition = null;
+          pagePosition = next;
+        } else {
+          pagePosition = from;
+          pageTransition = { from: from, to: next, start: clock() };
+        }
       }
+      if (changed) emitPage();
       requestDraw();
     }
 
     function getState() {
       return {
         page: page,
-        scrollY: page <= 0 ? 0 : scrollY,
+        scrollY: page <= 1 ? 0 : scrollY,
         refreshing: refreshing,
         pull: pull
       };
     }
 
     function handleTap(x, y) {
+      if (page === 0) return;
       var i;
-      for (i = 0; i < 4; i++) {
+      for (i = 0; i < 5; i++) {
         if (contains(dotHit(i), x, y)) {
           goTo(i);
           return;
         }
       }
-      if (page !== 0) return;
+      if (page !== 1) return;
       for (i = 0; i < 3; i++) {
         if (contains(columnRect(i), x, y)) {
-          goTo(i + 1);
+          goTo(i + 2);
           return;
         }
       }
@@ -1222,20 +1265,22 @@
       activeId = null;
       axis = null;
       mode = null;
-      dragX = 0;
       if (!commit) {
-        scrollY = origin;
         pull = 0;
+        goTo(page);
+        scrollY = origin;
+        scrollOrigin = origin;
         requestDraw();
         return;
       }
       pull = 0;
       if (ax === 'h') {
         var dx = x - sx;
-        if (Math.abs(dx) >= SWIPE) goTo(page + (dx < 0 ? 1 : -1));
-        else requestDraw();
+        var step = Math.abs(dx) >= SWIPE ? (dx < 0 ? 1 : -1) : 0;
+        goTo(page + step);
         return;
       }
+      dragX = 0;
       if (ax === 'v') {
         if (gestureMode === 'pull' && pulled >= PULL) beginRefresh(scopeFor(page));
         else requestDraw();
@@ -1259,6 +1304,10 @@
       if (!axis) {
         if (Math.abs(dx) < LOCK && Math.abs(dy) < LOCK) return;
         axis = Math.abs(dx) > Math.abs(dy) ? 'h' : 'v';
+        if (axis === 'h') {
+          updatePagePosition();
+          pageTransition = null;
+        }
         if (axis === 'v') mode = (scrollY === 0 && dy > 0 && !refreshing) ? 'pull' : 'scroll';
       }
       if (axis === 'h') {
@@ -1348,7 +1397,7 @@
     }
 
     function onWheel(e) {
-      if (stopped || page <= 0 || !e) return;
+      if (stopped || page <= 1 || !e) return;
       remeasure();
       if (maxScroll <= 0) return;
       var rect = canvas.getBoundingClientRect ? canvas.getBoundingClientRect() : null;
@@ -1369,7 +1418,7 @@
       if (e.key === 'ArrowRight') { goTo(page + 1); if (e.preventDefault) e.preventDefault(); }
       else if (e.key === 'ArrowLeft') { goTo(page - 1); if (e.preventDefault) e.preventDefault(); }
       else if (e.key === 'Home') { goTo(0); if (e.preventDefault) e.preventDefault(); }
-      else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && page > 0) {
+      else if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && page >= 2) {
         remeasure();
         scrollY = clamp(scrollY + (e.key === 'ArrowDown' ? 48 : -48), 0, maxScroll);
         requestDraw();
@@ -1417,7 +1466,7 @@
       backgroundLoaders.length = 0;
       backgrounds = {};
       customBackgrounds = {};
-      fade = null;
+      pageTransition = null;
       activeId = null;
       startX = null;
       if (canvas.__hoyoCardControllerDestroy === destroy) {

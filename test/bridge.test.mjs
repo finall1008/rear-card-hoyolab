@@ -113,8 +113,10 @@ test('independent background context updates cache + safe snapshot without rewri
   const runtime = await login(api);
   const authBefore = copy(data.get('hoyolab.auth')); const settingsBefore = copy(data.get('hoyolab.settings'));
   const callStart = calls.length;
+  data.set('hoyolab.card.page', 0);
   const result = await refreshBackground(api);
   assert.equal(result.refreshed, 3);
+  assert.equal(snapshots.at(-1).page, 0, '后台刷新保留已存储的简洁页位置');
   assert.deepEqual(data.get('hoyolab.auth'), authBefore); assert.deepEqual(data.get('hoyolab.settings'), settingsBefore);
   assert.equal(Object.values(snapshots.at(-1).games).filter(game => game.status === 'ok').length, 3); assertPublic(snapshots.at(-1));
   assert.ok(calls.slice(callStart).every(call => call.timeoutMs === 3000));

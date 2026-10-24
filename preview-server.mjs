@@ -115,6 +115,6 @@ export function createPreviewServer(provider) {
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const server = createPreviewServer(createPreviewProvider());
-  server.listen(Number(process.env.PREVIEW_PORT ?? 18767), '127.0.0.1', () => console.log(`四页卡片预览 http://127.0.0.1:${server.address().port}\n沿用已有设置原型的真实数据；原设置页不变。`));
+  server.listen(Number(process.env.PREVIEW_PORT ?? 18767), '127.0.0.1', () => console.log(`五页卡片预览 http://127.0.0.1:${server.address().port}\n沿用已有设置原型的真实数据；原设置页不变。`));
   server.on('error', error => { console.error(`预览启动失败：${error.code}`); process.exitCode = 1; });
 }

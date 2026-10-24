@@ -37,11 +37,13 @@ test('card DTO preserves zero/unknown/rewards and maps all three note structures
   assert.equal(snapshot.games.zzz.list.find(row => row.label === '今日签到').value, '未签到');
   assert.equal(snapshot.games.zzz.list.find(row => row.label === '录像店经营').value, '待结算');
 });
-test('snapshot preserves cached AOD backgrounds across refresh', () => {
+test('snapshot preserves cached AOD backgrounds and page across refresh', () => {
   const previous = buildCardSnapshot(state());
   previous.backgrounds = { home: { custom: 'data:image/jpeg;base64,AA==', customBlur: null } };
+  previous.page = 4;
   const next = buildCardSnapshot(state(), previous);
   assert.deepEqual(next.backgrounds, previous.backgrounds);
+  assert.equal(next.page, 4);
 });
 test('failed refresh retains same-account same-role values but never after logout/role change', () => {
   const s = state(), old = buildCardSnapshot(s);

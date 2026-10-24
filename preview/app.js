@@ -2,15 +2,21 @@
 (function () {
   'use strict';
   var KEY = 'hoyolab.card.display.v1';
+  var PAGE_KEY = 'hoyolab.card.page.v1';
+  var initialPage = 1;
+  try {
+    var savedPage = localStorage.getItem(PAGE_KEY);
+    if (savedPage !== null) initialPage = Number(savedPage);
+  } catch (_) { /* unavailable storage */ }
   var csrf = null;
-  var activePage = 0;
+  var activePage = 1;
   var busy = false;
   var initialSnapshot = null;
   try { initialSnapshot = JSON.parse(localStorage.getItem(KEY)); } catch (_) { /* first open or unavailable cache */ }
   var status = document.getElementById('status');
   var refreshButton = document.getElementById('refresh');
-  var scopes = ['all', 'genshin', 'hsr', 'zzz'];
-  var names = ['全部', '原神', '星穹铁道', '绝区零'];
+  var scopes = ['all', 'all', 'genshin', 'hsr', 'zzz'];
+  var names = ['全部', '全部', '原神', '星穹铁道', '绝区零'];
   var BACKGROUND_PAGES = ['home', 'genshin', 'hsr', 'zzz'];
   var card;
   function store(snapshot) {
@@ -38,7 +44,7 @@
       if (!response.ok) throw new Error(result.error);
       csrf = result.csrf;
       try { store(result.snapshot); } catch (_) { /* disk save succeeded */ }
-      var failed = scopes.slice(1).filter(function (game) { return (scope === 'all' || scope === game) && result.snapshot.games[game].status === 'error'; });
+      var failed = ['genshin', 'hsr', 'zzz'].filter(function (game) { return (scope === 'all' || scope === game) && result.snapshot.games[game].status === 'error'; });
       status.textContent = failed.length ? '部分刷新失败；已保留上次成功数据，详情页可查看状态。' : '刷新结果已保存 · ' + new Date().toLocaleTimeString('zh-CN');
       return result.snapshot;
     } catch (error) {
@@ -60,10 +66,12 @@
   }
   function pageChanged(page) {
     activePage = page;
+    try { localStorage.setItem(PAGE_KEY, String(page)); } catch (_) { /* unavailable storage */ }
     document.querySelectorAll('[data-page]').forEach(function (button) { button.setAttribute('aria-pressed', String(Number(button.dataset.page) === page)); });
     refreshButton.textContent = '刷新' + names[page];
   }
-  card = HoyoCard.mount({ canvas: document.getElementById('rear'), initialSnapshot: initialSnapshot, refresh: refresh, onPageChange: pageChanged });
+  card = HoyoCard.mount({ canvas: document.getElementById('rear'), initialSnapshot: initialSnapshot, initialPage: initialPage, refresh: refresh, onPageChange: pageChanged });
+  pageChanged(card.getState().page);
   loadBackgrounds();
   document.querySelectorAll('[data-page]').forEach(function (button) { button.addEventListener('click', function () { card.goTo(Number(button.dataset.page)); }); });
   refreshButton.addEventListener('click', function () {

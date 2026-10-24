@@ -95,13 +95,14 @@ export class BridgeStore {
   async flush() { await this.queue; }
 }
 
-async function publishSnapshot(bridge, db) {
+async function publishSnapshot(bridge, db, page) {
   const owner = stamp(db);
   const [auth, settings] = await Promise.all([bridge.storage.get(AUTH), bridge.storage.get(SETTINGS)]);
   if ((auth?.account?.savedAt ?? null) !== owner) return;
   // The current persisted selection wins over a stale foreground/background mirror.
   const current = { ...db, settings: settings ?? db.settings };
   const snapshot = buildCardSnapshot(current, bridge.card.readSnapshot());
+  if (Number.isInteger(page) && page >= 0 && page <= 4) snapshot.page = page;
   // Display-only fields; no Cookie/SToken/MID/device fingerprint. Await before repaint.
   await bridge.card.saveSnapshot(snapshot);
 }
@@ -178,7 +179,8 @@ export async function refreshBackground(bridge) {
   const auth = await bridge.storage.get(AUTH);
   if (refreshed && auth?.account?.savedAt === owner) {
     // An entirely failed refresh leaves the previous frame untouched.
-    await publishSnapshot(bridge, service.db);
+    const page = await bridge.storage.get('hoyolab.card.page');
+    await publishSnapshot(bridge, service.db, page);
   }
   return { refreshed };
 }
